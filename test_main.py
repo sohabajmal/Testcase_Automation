@@ -17,5 +17,5 @@ def test_addition():
 
 
 @pytest.mark.hugepages
-def test_addition():
+def test_addition2():
     assert numa_add(2,6)==10
