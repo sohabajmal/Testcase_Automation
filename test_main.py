@@ -1,16 +1,21 @@
 from features.numa import *
+import pytest
 
-
-def setup():
-    //Read Settings Files
-    //Read Baremetsl Nodes List
-    //Setup Environment
+#def setup():
+    #Read Settings Files
+    #Read Baremetsl Nodes List
+    #Setup Environment
     
-    //return settings
+    #return settings
 
-def(tear_down):
-    // Tear Down Data
+#def(tear_down):
+#     Tear Down Data
 
-@pytets.mark.numa
+@pytest.mark.numa
 def test_addition():
-    assert numa_add(2,6)= 8
+    assert numa_add(2,6)== 8
+
+
+@pytest.mark.hugepages
+def test_addition():
+    assert numa_add(2,6)==10
