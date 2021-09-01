@@ -1,4 +1,5 @@
-import numa*
+from features.numa import *
+
 
 def setup():
     //Read Settings Files
