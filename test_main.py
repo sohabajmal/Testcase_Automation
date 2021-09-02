@@ -97,6 +97,7 @@ def test_addition(undercloud):
 
 
 @pytest.mark.hugepages
+<<<<<<< HEAD
 def test_addition2(undercloud_token):
     assert numa_add(2,6)==8
     print(undercloud_token)
@@ -111,3 +112,7 @@ def test_addition4(environment):
 
 
 
+=======
+def test_addition2():
+    assert numa_add(2,6)==10
+>>>>>>> c67d28c239de10560745d4d2c06c6b9747bbc4b6
