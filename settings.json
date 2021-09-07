@@ -16,18 +16,15 @@
     "external_subnet": "external_sub",
 
     "image_name": "testcase_image",
-    "image_file": "~/CentOS-7-x86_64-GenericCloud.qcow2",
     
     "flavor1": "testing_flavor",
     "flavor2": "testing_flavor2",
     "server_1_name": "testcase_server1",
-    "server2": "testcase_server2",
+    "server2_name": "testcase_server2",
     "network_provider_type": "vlan",
     "key_name": "testcase_ssh-key",
     "key_file": "~/testcase_ssh.pem",
-    "ovsdpdk_ports": 4,
-    "compute_nodes": 3,
-
+ 
     "sah_ip": "100.67.68.7",
     "ini_file": "/root/R68.ini"
 }

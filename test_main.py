@@ -72,8 +72,6 @@ def overcloud_authentication_token(overcloud, endpoints):
 #create basic openstack environment     
 @pytest.fixture(scope="session", name="environment")
 def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini_file):
-    #features = ["numa", "hugepages"]
-
     #create networks
     if ini_file.get("mtu_size")== "9000":
         network1_id = search_and_create_network(endpoints.get("neutron"), overcloud_token, settings["network1_name"], 9000, settings["network_provider_type"], False)
@@ -129,9 +127,16 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini
     command= "chmod 400 "+keyfile_name
     os.system(command)
 
+    #download centos imgae if it is not downloaded
+    if (os.path.isfile(os.path.expanduser("~/{}".format(ini_file.get("image_file_name"))))):
+        logging.info("centos image file aready exists")
+        print("centos image file aready exists")
+    else:
+        download_qcow_image(ini_file.get("sanity_image_url"))
+
     #create image
     if ini_file.get("barbican_enabled")=="false":
-        image_id= search_and_create_image(endpoints.get("image"), overcloud_token, settings["image_name"], "bare", "qcow2", "public", os.path.expanduser(settings["image_file"]))
+        image_id= search_and_create_image(endpoints.get("image"), overcloud_token, c["image_name"], "bare", "qcow2", "public", os.path.expanduser(ini_file.get("image_file_name")))
     else:
         image_id= search_image(endpoints.get("nova"), overcloud_token, settings["image_name"])
         if(image_id is None):
@@ -141,18 +146,17 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini
             image_id= create_barbican_image(endpoints.get("image"), overcloud_token, settings["image_name"], "bare", "qcow2", "public", image_signature, barbican_key_id)
         status= get_image_status(endpoints.get("image"), overcloud_token, image_id)
         if status== "queued":
-            image_file= open(os.path.expanduser(settings["image_file"]), 'rb')
+            image_file= open(os.path.expanduser(ini_file.get("image_file_name")), 'rb')
             upload_file_to_image(endpoints.get("image"), overcloud_token, image_file, image_id)
 
     #create flavor    
     flavor_id= search_and_create_flavor(endpoints.get("nova"), overcloud_token, settings["flavor1"], 4096, 2, 150)
-    if(features[0] == "ovsdpdk"):
+    if(ini_file.get("ovs_dpdk_enabled")=="true"):
         logging.info("putting ovsdpdk specs in flavor")
         put_ovs_dpdk_specs_in_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
-    elif("numa" in features or features[0]=="sriov" or features[0]=="sriov_vflag"):
+    elif(ini_file.get("numa_enable")=="true" or ini_file.get("sriov_enabled")=="true"):
         logging.info("putting numa specs in flavor")
         put_extra_specs_in_flavor(endpoints.get("nova"), overcloud_token, flavor_id, True)
-    
     return network1_id, network2_id, subnet1_id, subnet2_id, router_id, security_group_id, image_id, flavor_id, keypair_public_key
 
 
