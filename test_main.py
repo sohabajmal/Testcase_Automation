@@ -30,10 +30,8 @@ logging.basicConfig(level=logging.DEBUG,
 
 deployed_feature = ["numa", "hugepages", "barbican"]
 
-
 # Fixtures provide a fixed baseline so that tests execute reliably and produce consistent, repeatable, results. 
 # They have 4 scopes: classes, modules, packages or session
-
 
 #read settings from settings.json
 @pytest.fixture(scope="session", name="settings")
@@ -132,7 +130,7 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini
     os.system(command)
 
     #create image
-    if ini_file.get("barbican_enabled")=="true":
+    if ini_file.get("barbican_enabled")=="false":
         image_id= search_and_create_image(endpoints.get("image"), overcloud_token, settings["image_name"], "bare", "qcow2", "public", os.path.expanduser(settings["image_file"]))
     else:
         image_id= search_image(endpoints.get("nova"), overcloud_token, settings["image_name"])
@@ -183,6 +181,8 @@ def test_number_of_vcpus_pinned_are_same_as_the_vcpus_in_numa_flavour(settings, 
 
 #Barbican Testases
 #@pytest.mark.skipif(ini_file.get("barbican_enabled"=="False") , reason="Barbican is disabled in ini file")
+#@pytest.mark.skipif("barbican" not in deployed_feature , reason="Barbican is disabled in ini file")
+
 @pytest.mark.barbican
 @pytest.mark.functional
 def test_create_barbican_secret(endpoints, overcloud_token):

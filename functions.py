@@ -66,7 +66,7 @@ def create_services_endpoints(undercloud_ip, overcloud_ip):
 #def create_ssh_pem_file():
 def read_ini_settings(sah_ip, ini_file):
     settings_dic={}
-    command= "grep -e mtu_size_global_default= -e nic_env_file= -e hpg_enable= -e hpg_size= -e numa_enable= -e ovs_dpdk_enable= -e sriov_enable= -e smart_nic= -e dvr_enable= -e barbican_enable= -e octavia_enable= -e overcloud_name= {}".format(ini_file)
+    command= "grep -e mtu_size_global_default= -e nic_env_file= -e hpg_enable= -e hpg_size= -e numa_enable= -e ovs_dpdk_enable= -e sriov_enable= -e smart_nic= -e dvr_enable= -e barbican_enable= -e octavia_enable= -e overcloud_name= -e sanity_image_url={}".format(ini_file)
 
     settings= ssh_into_node(sah_ip, command, "root")
     
@@ -108,11 +108,14 @@ def read_ini_settings(sah_ip, ini_file):
     #overcloud name
     overcloud_name=settings[11].split("=")
     settings_dic['overcloud_name']=overcloud_name[1]
+    #sanity image url
+    sanity_image_url=settings[12].split("=")
+    settings_dic['sanity_image_url']=sanity_image_url[1]
+    #sanity image name
+    sanity_image_url=sanity_image_url.split("/")
+    settings_dic['image_file_name']=sanity_image_url[-1]
     print(settings_dic)
-    return settings_dic
-
-
-    
+    return settings_dic    
 
 def ssh_into_node(host_ip, command, user_name="heat-admin"):
     try:

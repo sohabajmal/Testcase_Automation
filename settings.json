@@ -27,7 +27,7 @@
     "key_file": "~/testcase_ssh.pem",
     "ovsdpdk_ports": 4,
     "compute_nodes": 3,
-    
-    "sah_ip": "100.67.62.8",
-    "ini_file": "/root/R62.ini"
+
+    "sah_ip": "100.67.68.7",
+    "ini_file": "/root/R68.ini"
 }
