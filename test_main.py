@@ -45,7 +45,7 @@ def read_user_settings():
 def read_ini_file(settings):
     settings= read_ini_settings(settings.get("sah_ip"), settings.get("ini_file"))
     return settings
-    
+
 #read stackrc file
 @pytest.fixture(scope="session", name="undercloud")
 def read_stackrc_file():
@@ -182,7 +182,7 @@ def test_number_of_vcpus_pinned_are_same_as_the_vcpus_in_numa_flavour(settings, 
 
 
 #Barbican Testases
-#@pytest.mark.skipif("barbican" not in deployed_feature , reason="Barbican is disabled in ini file")
+@pytest.mark.skipif(ini_file.get("barbican_enabled"=="false") , reason="Barbican is disabled in ini file")
 @pytest.mark.barbican
 @pytest.mark.functional
 def test_create_barbican_secret(endpoints, overcloud_token):
