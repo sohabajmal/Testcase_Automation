@@ -16,7 +16,7 @@ def get_vcpus_of_instance(settings, environment, nova_ep, token):
     server_id= create_numa_instance(settings, environment, nova_ep, token, flavor_id)
     host= get_server_baremetal_host(nova_ep, token, server_id)
     instance_name= get_server_instance_name(nova_ep, token, server_id)
-    ip="192.168.120.21"
+    ip="192.168.120.59"
     command= "sudo cat /etc/libvirt/qemu/{}.xml | grep vcpus".format(instance_name)
     output= ssh_into_node(ip, command)
     output=output[0]

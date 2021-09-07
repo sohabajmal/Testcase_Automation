@@ -19,7 +19,7 @@ import subprocess
 import time
 
 
-'''
+
 if not os.path.exists('logs'):
     os.makedirs('logs')
 log_file= "logs/"+ time.strftime("%d-%m-%Y-%H-%M-%S")+".log"
@@ -27,8 +27,8 @@ logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(message)s',
                     handlers=[logging.FileHandler(log_file),
                               logging.StreamHandler()])
-'''
-deployed_feature = ["numa", "hugepages"]
+
+deployed_feature = ["numa", "hugepages", "barbican"]
 
 
 # Fixtures provide a fixed baseline so that tests execute reliably and produce consistent, repeatable, results. 
@@ -73,11 +73,11 @@ def overcloud_authentication_token(overcloud, endpoints):
 
 #create basic openstack environment     
 @pytest.fixture(scope="session", name="environment")
-def create_basic_openstack_environment(settings, endpoints, overcloud_token):
-    features = ["numa", "hugepages", "barbican"]
+def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini_file):
+    #features = ["numa", "hugepages"]
 
     #create networks
-    if features[0]== "mtu9000":
+    if ini_file.get("mtu_size")== "9000":
         network1_id = search_and_create_network(endpoints.get("neutron"), overcloud_token, settings["network1_name"], 9000, settings["network_provider_type"], False)
         network2_id = search_and_create_network(endpoints.get("neutron"), overcloud_token, settings["network2_name"], 9000, settings["network_provider_type"], False)
     else: 
@@ -132,7 +132,7 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token):
     os.system(command)
 
     #create image
-    if ("barbican" not in features):
+    if ini_file.get("barbican_enabled")=="true":
         image_id= search_and_create_image(endpoints.get("image"), overcloud_token, settings["image_name"], "bare", "qcow2", "public", os.path.expanduser(settings["image_file"]))
     else:
         image_id= search_image(endpoints.get("nova"), overcloud_token, settings["image_name"])
@@ -182,7 +182,7 @@ def test_number_of_vcpus_pinned_are_same_as_the_vcpus_in_numa_flavour(settings, 
 
 
 #Barbican Testases
-@pytest.mark.skipif(ini_file.get("barbican_enabled"=="false") , reason="Barbican is disabled in ini file")
+#@pytest.mark.skipif(ini_file.get("barbican_enabled"=="False") , reason="Barbican is disabled in ini file")
 @pytest.mark.barbican
 @pytest.mark.functional
 def test_create_barbican_secret(endpoints, overcloud_token):

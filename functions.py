@@ -77,10 +77,7 @@ def read_ini_settings(sah_ip, ini_file):
     settings_dic['mtu_size']=mtu_size[1]
     #NFV Ports
     total_nfv_ports=settings[1].split("=")
-    ports= [int(s) for s in total_nfv_ports[1].split() if s.isdigit()]
-
-    settings_dic['total_nfv_ports']=s
-
+    settings_dic['total_nfv_ports']=total_nfv_ports[1]
     #hugepage_enabled
     hpg_enable=settings[2].split("=")
     settings_dic['hugepage_enabled']=hpg_enable[1]
