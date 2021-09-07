@@ -1,4 +1,50 @@
 
+import requests
+import json
+import os
+import time
+import logging
+import paramiko
+
+def send_get_request(api_url, token, header="application/json"):
+    try:
+        return requests.get(api_url, headers= {'content-type': header, 'X-Auth-Token': token}) 
+    except Exception as e:
+        logging.error( "request processing failure ", stack_info=True)
+        logging.exception(e)
+
+def send_put_request(api_url, token, payload, header='application/json'):
+    try:
+       return requests.put(api_url, headers= {'content-type':header, 'X-Auth-Token': token}, data=json.dumps(payload))
+    except Exception as e:
+        logging.error( "request processing failure ", stack_info=True)
+        logging.exception(e)
+
+def send_post_request(api_url, token, payload, header='application/json'):
+    try:
+        #'OpenStack-API-Version': 'compute 2.74',
+        return requests.post(api_url, headers= {'content-type':header, 'OpenStack-API-Version': 'compute 2.74', 'X-Auth-Token': token}, data=json.dumps(payload))
+    except Exception as e:
+       logging.error( "request processing failure ", stack_info=True)
+       logging.exception(e)
+
+def send_delete_request(api_url, token, header='application/json' ):
+    try:
+        requests.delete(api_url, headers= {'content-type':header, 'X-Auth-Token': token})
+    except Exception as e:
+       logging.error( "request processing failure ", stack_info=True)
+       logging.exception(e)
+
+def parse_json_to_search_resource(data, resource_name, resource_key, resource_value, return_key):
+    data= data.json()
+    for res in (data[resource_name]):
+        if resource_value in res[resource_key]:
+            logging.warning("{} already exists".format(resource_value))
+            return res[return_key]
+            break
+    else:
+        logging.info("{} does not exist".format(resource_value))
+
 '''
 Flavor
 '''
@@ -220,6 +266,11 @@ def check_server_status(nova_ep, token, server_id):
     logging.debug(response.text)
     data= response.json()
     return data["server"]["OS-EXT-STS:vm_state"] if response.ok else response.raise_for_status()
+def get_server_baremetal_host(nova_ep, token, server_id):
+    response = send_get_request("{}/v2.1/servers/{}".format(nova_ep, server_id), token)
+    logging.debug(response.text)
+    data= response.json()
+    return data["server"]["OS-EXT-SRV-ATTR:host"] if response.ok else response.raise_for_status()
 
 def parse_server_ip(data, network, network_type):
     data=data.json()
@@ -410,7 +461,7 @@ def server_build_wait(nova_ep, token, server_ids):
         flag=0
         for server in server_ids:
             status= check_server_status(nova_ep, token, server)
-            print(status)
+            logging.info(status)
             if not (status == "active" or status=="error"):
                 logging.info("Waiting for server/s to build")
                 flag=1
@@ -429,6 +480,12 @@ def wait_instance_boot(ip):
         retries=retries+1
         if(retries==5):
             return False
+
+def delete_server(nova_ep, token, server_id):
+    send_delete_request("{}/v2.1/servers/{}".format(nova_ep,server_id), token)
+    time.sleep(5)
+def delete_flavor(nova_ep, token, flavor_id):
+    send_delete_request("{}/v2.1/flavors/{}".format(nova_ep,flavor_id), token)
 
 
 

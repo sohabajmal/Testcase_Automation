@@ -1,7 +1,13 @@
-from features.numa import *
 from functions import *
+from features.numa import *
+from features.barbican import *
+#from features.barbican import *
 from openstack_api_functions.keystone import *
 from openstack_api_functions.neutron import *
+from openstack_api_functions.barbican import *
+from openstack_api_functions.loadbalancer import *
+from openstack_api_functions.nova import *
+from openstack_api_functions.volume import *
 import pytest
 import json
 import os
@@ -13,35 +19,63 @@ import subprocess
 import time
 
 
+'''
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+log_file= "logs/"+ time.strftime("%d-%m-%Y-%H-%M-%S")+".log"
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s %(message)s',
+                    handlers=[logging.FileHandler(log_file),
+                              logging.StreamHandler()])
+'''
+deployed_feature = ["numa", "hugepages"]
 
-#Fixtures
+
+# Fixtures provide a fixed baseline so that tests execute reliably and produce consistent, repeatable, results. 
+# They have 4 scopes: classes, modules, packages or session
+
+
+#read settings from settings.json
 @pytest.fixture(scope="session", name="settings")
 def read_user_settings():
     return read_settings("settings.json")
 
+#read settings from ini file
+@pytest.fixture(scope="session", name="ini_file")
+def read_ini_file(settings):
+    settings= read_ini_settings(settings.get("sah_ip"), settings.get("ini_file"))
+    return settings
+    
+#read stackrc file
 @pytest.fixture(scope="session", name="undercloud")
 def read_stackrc_file():
     return read_rc_file(os.path.expanduser("~/stackrc"))
 
+#read overcloud rc file
 @pytest.fixture(scope="session", name="overcloud")
-def read_overcloudrc_file():
-    return read_rc_file(os.path.expanduser("~/r62rc"))
+def read_overcloudrc_file(ini_file):
+    return read_rc_file(os.path.expanduser("~/{}rc".format(ini_file.get("overcloud_name"))))
 
+#get endpoints of overcloud
 @pytest.fixture(scope="session", name="endpoints")
 def get_services_endpoints(undercloud, overcloud):
     return create_services_endpoints(undercloud.get("ip"), overcloud.get("ip"))
 
+#get undercloud token
 @pytest.fixture(scope="session", name="undercloud_token")
-def undercloud_authentication_token(undercloud, endpoints ):
+def undercloud_authentication_token(undercloud, endpoints):
     return get_authentication_token(endpoints.get("undercloud_keystone"), undercloud.get("username"), undercloud.get("password"))
 
+#get overcloud token
 @pytest.fixture(scope="session", name="overcloud_token")
 def overcloud_authentication_token(overcloud, endpoints):
     return get_authentication_token(endpoints.get("keystone"), overcloud.get("username"), overcloud.get("password"))
-     
+
+#create basic openstack environment     
 @pytest.fixture(scope="session", name="environment")
 def create_basic_openstack_environment(settings, endpoints, overcloud_token):
     features = ["numa", "hugepages", "barbican"]
+
     #create networks
     if features[0]== "mtu9000":
         network1_id = search_and_create_network(endpoints.get("neutron"), overcloud_token, settings["network1_name"], 9000, settings["network_provider_type"], False)
@@ -72,7 +106,7 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token):
         add_interface_to_router(endpoints.get("neutron"), overcloud_token, router_id, subnet2_id)
         add_interface_to_router(endpoints.get("neutron"), overcloud_token, router_id, subnet1_id)
 
-    #### SSH Keypair
+    #create ssh keypair and create new .pem file on director
     keypair_public_key= "" 
     keypair_key= search_keypair(endpoints.get("nova"), overcloud_token, settings["key_name"])
     keypair_private_key=""
@@ -80,9 +114,9 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token):
     keyfile_name= os.path.expanduser(settings["key_file"])
     if(keypair_key != None):
         logging.info("deleting old ssh key")
-        delete_resource("{}/v2.1/os-keypairs/{}".format(nova_ep, settings["key_name"]), token)
+        delete_resource("{}/v2.1/os-keypairs/{}".format(endpoints.get("nova"), settings["key_name"]), overcloud_token)
 
-    keypair_private_key= create_keypair(endpoints.get("nova"), token, settings["key_name"])
+    keypair_private_key= create_keypair(endpoints.get("nova"), overcloud_token, settings["key_name"])
     logging.info("ssh key created")
     try:
         logging.info("deleting old private file")
@@ -106,8 +140,8 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token):
             key= create_ssl_certificate(settings)
             image_signature= sign_image(settings)
             barbican_key_id= add_key_to_store(endpoints.get("barbican"), overcloud_token, key)
-            image_id= create_barbican_image(endpoints.get("barbican"), overcloud_token, settings["image_name"], "bare", "qcow2", "public", image_signature, barbican_key_id)
-        status= get_image_status(image_ep, token, image_id)
+            image_id= create_barbican_image(endpoints.get("image"), overcloud_token, settings["image_name"], "bare", "qcow2", "public", image_signature, barbican_key_id)
+        status= get_image_status(endpoints.get("image"), overcloud_token, image_id)
         if status== "queued":
             image_file= open(os.path.expanduser(settings["image_file"]), 'rb')
             upload_file_to_image(endpoints.get("image"), overcloud_token, image_file, image_id)
@@ -122,35 +156,35 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token):
         put_extra_specs_in_flavor(endpoints.get("nova"), overcloud_token, flavor_id, True)
     
     return network1_id, network2_id, subnet1_id, subnet2_id, router_id, security_group_id, image_id, flavor_id, keypair_public_key
-    
 
-@pytest.mark.test
-def test_setup(settings):
-    print(settings.get("network2_name"))
+
+#Testcases 
+#Numa testcases
+@pytest.mark.numa
+@pytest.mark.functional
+def test_verify_instance_creation_with_numa_flavor(settings, environment, endpoints, overcloud_token):
+    #create flavor
+    flavor_id= search_and_create_flavor(endpoints.get("nova"), overcloud_token, "numa_flavor", 4096, 4, 10)
+    #create server
+    server_id= create_numa_instance(settings, environment, endpoints.get("nova"), overcloud_token, flavor_id)
+    #check status of server is active or not
+    assert check_server_status(endpoints.get("nova"), overcloud_token, server_id) == "active"
+    #delete server
+    delete_server(endpoints.get("nova"), overcloud_token, server_id)
+    #delete falvor
+    delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)    
 
 @pytest.mark.numa
-def test_addition(undercloud):
-    assert numa_add(2,6)== 8
-    print (undercloud.get("username"))
+@pytest.mark.negative
+def test_number_of_vcpus_pinned_are_same_as_the_vcpus_in_numa_flavour(settings, environment, endpoints, overcloud_token):
+    #verify cpus of instance are 4 or not 
+    assert get_vcpus_of_instance(settings, environment, endpoints.get("nova"), overcloud_token) == "4"
 
 
-@pytest.mark.hugepages
-<<<<<<< HEAD
-def test_addition2(undercloud_token):
-    assert numa_add(2,6)==8
-    print(undercloud_token)
+#Barbican Testases
+#@pytest.mark.skipif("barbican" not in deployed_feature , reason="Barbican is disabled in ini file")
+@pytest.mark.barbican
+@pytest.mark.functional
+def test_create_barbican_secret(endpoints, overcloud_token):
+    assert create_barbican_secret(endpoints.get("barbican"), overcloud_token) != "" or None
 
-def test_addition3(overcloud_token):
-    assert numa_add(4,6)==10
-    print(overcloud_token)
-
-def test_addition4(environment):
-    print(environment[0])
-    print(environment[1])
-
-
-
-=======
-def test_addition2():
-    assert numa_add(2,6)==10
->>>>>>> c67d28c239de10560745d4d2c06c6b9747bbc4b6

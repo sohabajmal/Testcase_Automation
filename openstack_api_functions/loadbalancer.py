@@ -1,3 +1,52 @@
+import requests
+import json
+import os
+import time
+import logging
+import paramiko
+
+def send_get_request(api_url, token, header="application/json"):
+    try:
+        return requests.get(api_url, headers= {'content-type': header, 'X-Auth-Token': token}) 
+    except Exception as e:
+        logging.error( "request processing failure ", stack_info=True)
+        logging.exception(e)
+
+def send_put_request(api_url, token, payload, header='application/json'):
+    try:
+       return requests.put(api_url, headers= {'content-type':header, 'X-Auth-Token': token}, data=json.dumps(payload))
+    except Exception as e:
+        logging.error( "request processing failure ", stack_info=True)
+        logging.exception(e)
+
+def send_post_request(api_url, token, payload, header='application/json'):
+    try:
+        #'OpenStack-API-Version': 'compute 2.74',
+        return requests.post(api_url, headers= {'content-type':header, 'OpenStack-API-Version': 'compute 2.74', 'X-Auth-Token': token}, data=json.dumps(payload))
+    except Exception as e:
+       logging.error( "request processing failure ", stack_info=True)
+       logging.exception(e)
+def send_delete_request(api_url, token, header='application/json' ):
+    try:
+        requests.delete(api_url, headers= {'content-type':header, 'X-Auth-Token': token})
+        time.sleep(5)
+    except Exception as e:
+       logging.error( "request processing failure ", stack_info=True)
+       logging.exception(e)
+def delete_resource(api_url, token):
+    send_delete_request(api_url, token)
+
+
+def parse_json_to_search_resource(data, resource_name, resource_key, resource_value, return_key):
+    data= data.json()
+    for res in (data[resource_name]):
+        if resource_value in res[resource_key]:
+            logging.warning("{} already exists".format(resource_value))
+            return res[return_key]
+            break
+    else:
+        logging.info("{} does not exist".format(resource_value))
+
 
 #Load Balancer
 def create_loadbalancer(loadbal_ep, token, loadbalancer_name, subnet_id):
