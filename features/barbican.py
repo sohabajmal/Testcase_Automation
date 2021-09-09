@@ -10,6 +10,7 @@ from openstack_api_functions.barbican import *
 
 def create_ssl_certificate(settings):
     logging.info("Generating Certificate")
+    logging.debug("Generating Certificate")
     os.popen("openssl genrsa -out ~/testcase_private_key.pem 1024")
     time.sleep(2)
     os.popen("openssl rsa -pubout -in ~/testcase_private_key.pem -out ~/testcase_public_key.pem")
@@ -26,17 +27,17 @@ def create_ssl_certificate(settings):
     time.sleep(4)
     private_key= private_key.read()
     return private_key
-def sign_image(settings):
+def sign_image(settings, file_name):
     #Sign image with Private Key
     logging.info("Signing image with private key")
-    command= "openssl dgst -sha256 -sign ~/testcase_private_key.pem -sigopt rsa_padding_mode:pss -out ~/testcase_cirros-0.4.0.signature {}".format(os.path.expanduser(settings["image_file"]))
+    logging.debug("Signing image with private key")
+    command= "openssl dgst -sha256 -sign ~/testcase_private_key.pem -sigopt rsa_padding_mode:pss -out ~/testcase_cirros-0.4.0.signature {}".format(os.path.expanduser(file_name))
     os.popen(command)
     time.sleep(4)
     os.popen("base64 -w 0 ~/testcase_cirros-0.4.0.signature  > ~/testcase_cirros-0.4.0.signature.b64")
     time.sleep(4)
     image_signature= os.popen("cat ~/testcase_cirros-0.4.0.signature.b64")
     image_signature=image_signature.read()
-    print(image_signature)
     return image_signature
 
 def create_barbican_secret(barbican_ep, token):
@@ -47,6 +48,7 @@ def create_barbican_secret(barbican_ep, token):
 
 
 #def delete_barbican_secret():
+
 
 
 

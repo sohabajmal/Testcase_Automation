@@ -30,7 +30,7 @@ def send_post_request(api_url, token, payload, header='application/json'):
 
 def send_delete_request(api_url, token, header='application/json' ):
     try:
-        requests.delete(api_url, headers= {'content-type':header, 'X-Auth-Token': token})
+        return requests.delete(api_url, headers= {'content-type':header, 'X-Auth-Token': token})
     except Exception as e:
        logging.error( "request processing failure ", stack_info=True)
        logging.exception(e)
@@ -43,7 +43,7 @@ def parse_json_to_search_resource(data, resource_name, resource_key, resource_va
             return res[return_key]
             break
     else:
-        logging.info("{} does not exist".format(resource_value))
+        logging.debug("{} does not exist".format(resource_value))
 
 '''
 Flavor
@@ -52,11 +52,12 @@ Flavor
 def search_flavor(nova_ep, token, flavor_name):
     # get list of flavors
     response= send_get_request("{}/v2.1/flavors".format(nova_ep), token)
-    logging.info("successfully received flavor list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received flavor list") if response.ok else response.raise_for_status()
     return parse_json_to_search_resource(response, "flavors", "name", flavor_name, "id")
 
 def create_flavor(nova_ep, token, flavor_name, flavor_ram, flavor_vcpus, flavor_disks):
-    # create Flavor
+    # Creating Flavor 
+    logging.info("Creating flavor {}".format(flavor_name))
     payload={
         "flavor": {
             "name": flavor_name,
@@ -68,7 +69,7 @@ def create_flavor(nova_ep, token, flavor_name, flavor_ram, flavor_vcpus, flavor_
         }
     }
     response= send_post_request("{}/v2.1/flavors".format(nova_ep), token, payload)
-    logging.info("successfully created flavor") if response.ok else response.raise_for_status()
+    logging.debug("successfully created flavor") if response.ok else response.raise_for_status()
     data= response.json()
     return data['flavor']['id']
 def search_and_create_flavor(nova_ep, token, flavor_name, ram, vcpu, disks):
@@ -79,6 +80,7 @@ def search_and_create_flavor(nova_ep, token, flavor_name, ram, vcpu, disks):
     return flavor_id
 def put_extra_specs_in_flavor(nova_ep, token, flavor_id,is_numa, mem_page_size="large"):
     #add extra specs to flavors
+    logging.info("Putting extra sepcs in flavor")
     if is_numa== True:
         payload= {
             "extra_specs": {
@@ -101,8 +103,9 @@ def put_extra_specs_in_flavor(nova_ep, token, flavor_id,is_numa, mem_page_size="
         }
     response= send_post_request("{}/v2.1/flavors/{}/os-extra_specs".format(nova_ep, flavor_id), token, payload)
     logging.debug(response.text)
-    logging.info("successfully added extra specs to  flavor {}".format(flavor_id)) if response.ok else response.raise_for_status()
+    logging.debug("successfully added extra specs to  flavor {}".format(flavor_id)) if response.ok else response.raise_for_status()
 def put_ovs_dpdk_specs_in_flavor(nova_ep, token, flavor_id):
+    logging.info("Putting OVSDPDK specs in flavor")
     payload={
                 "extra_specs": {
                     "hw:cpu_policy": "dedicated",
@@ -114,13 +117,13 @@ def put_ovs_dpdk_specs_in_flavor(nova_ep, token, flavor_id):
                 }
         }  
     response= send_post_request("{}/v2.1/flavors/{}/os-extra_specs".format(nova_ep, flavor_id), token, payload)
-    logging.info("successfully added extra specs to  flavor {}".format(flavor_id)) if response.ok else response.raise_for_status()
+    logging.debug("successfully added extra specs to  flavor {}".format(flavor_id)) if response.ok else response.raise_for_status()
 '''
 Keypair
 '''
 def search_keypair(nova_ep, token, keypair_name):
     response= send_get_request("{}/v2.1/os-keypairs".format(nova_ep), token)
-    logging.info("successfully received keypair list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received keypair list") if response.ok else response.raise_for_status()
     data= response.json()
     for res in (data["keypairs"]):
         if keypair_name in res["keypair"]["name"]:
@@ -128,9 +131,10 @@ def search_keypair(nova_ep, token, keypair_name):
             return res["keypair"]["public_key"]
             break      
     else:
-        logging.info("{} does not exist".format(keypair_name))
+        logging.debug("{} does not exist".format(keypair_name))
 
 def create_keypair(nova_ep, token, keypair_name):
+    logging.info("Creating Keypair {}".format(keypair_name))
     payload={
         "keypair":{
             "name": keypair_name,
@@ -139,7 +143,7 @@ def create_keypair(nova_ep, token, keypair_name):
         }
     #nova_ep="http://192.168.140.252:8774/V2.2"
     response= send_post_request('{}/v2.1/os-keypairs'.format(nova_ep), token, payload)
-    logging.info("successfully created keypair {}".format(keypair_name)) if response.ok else response.raise_for_status()
+    logging.debug("successfully created keypair {}".format(keypair_name)) if response.ok else response.raise_for_status()
     data= response.json()
     return data["keypair"]["private_key"]
 def search_and_create_kaypair(nova_ep, token, key_name):
@@ -154,10 +158,11 @@ Image
 '''
 def search_image(nova_ep, token, image_name):
     response= send_get_request("{}/v2.1/images".format(nova_ep), token)
-    logging.info("successfully received images list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received images list") if response.ok else response.raise_for_status()
     return parse_json_to_search_resource(response, "images", "name", image_name, "id")
 
 def create_image(nova_ep, token, image_name, container_format, disk_format, image_visibility):
+    logging.info("creating image {}".format(image_name))
     payload ={
         "container_format": container_format,
         "disk_format":disk_format,
@@ -165,36 +170,36 @@ def create_image(nova_ep, token, image_name, container_format, disk_format, imag
         "visibility":  image_visibility,
     }
     response = send_post_request("{}/v2.1/images".format(nova_ep), token, payload)
-    logging.info("successfully created image {}".format(image_name)) if response.ok else response.raise_for_status()
+    logging.debug("successfully created image {}".format(image_name)) if response.ok else response.raise_for_status()
     data= response.json()
     return data["id"]
     
 def get_image_status(nova_ep, token, image_id):
     response= send_get_request("{}/v2.1/images/{}".format(nova_ep, image_id), token)
-    logging.info("successfully received image status") if response.ok else response.raise_for_status()
+    logging.debug("successfully received image status") if response.ok else response.raise_for_status()
     data= response.json()
     return(data["status"])
 
 def upload_file_to_image(image_ep, token, image_file, image_id):
     #image_file= open("cirros-0.5.1-x86_64-disk.img", "r")
     #response = send_put_request("{}/v2.1/images/{}/file".format(image_ep, image_id), token, image_file, "application/octet-stream")
+    logging.debug("Uploading file to image")
     try:
         response= requests.put("{}/v2.1/images/{}/file".format(image_ep, image_id), headers= {'content-type':"application/octet-stream", 'X-Auth-Token': token}, data=image_file)
         logging.debug(response.text)
     except Exception as e:
         logging.error( "request processing failure ", stack_info=True)
-        print(e)
-    logging.info("successfully uploaded file to image") if response.ok else response.raise_for_status()
+        logging.debug(e)
+    logging.debug("successfully uploaded file to image") if response.ok else response.raise_for_status()
 def search_and_create_image(image_ep, token, image_name, container_format, disk_format, image_visibility, image_file_path):
     image_id= search_image(image_ep, token, image_name)
     if image_id is None:
         image_id= create_image(image_ep, token, image_name, container_format, disk_format, image_visibility)    
     status= get_image_status(image_ep, token, image_id)
-    print(status)
     if status== "queued":
-        print("Successfully Queued")
+        logging.debug("Successfully Queued")
         image_file= open(image_file_path, 'rb')
-        logging.info("uploading image file")
+        logging.debug("uploading image file")
         upload_file_to_image(image_ep, token, image_file, image_id)
         logging.debug("image id is: {}".format(image_id))
     return image_id
@@ -205,15 +210,16 @@ Servers
 '''
 def receive_all_server(nova_ep, token):
     response= send_get_request("{}/v2.1/servers/detail".format(nova_ep), token)
-    logging.info("successfully received server list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received server list") if response.ok else response.raise_for_status()
     return response.json()
 
 def search_server(nova_ep, token, server_name):
     response= send_get_request("{}/v2.1/servers".format(nova_ep), token)
-    logging.info("successfully received server list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received server list") if response.ok else response.raise_for_status()
     return parse_json_to_search_resource(response, "servers", "name", server_name, "id")
 
 def create_server(nova_ep, token, server_name, image_id, keypair_name, flavor_id,  network_id, security_group_id, host=None, availability_zone= None):
+    logging.info("Creating Server {}".format(server_name))
     payload= {"server": {"name": server_name, "imageRef": image_id,
         "key_name": keypair_name, "flavorRef": flavor_id, 
         "max_count": 1, "min_count": 1, "networks": [{"uuid": network_id}], 
@@ -231,11 +237,11 @@ def create_server(nova_ep, token, server_name, image_id, keypair_name, flavor_id
         payload= {"server":{**payload["server"], **payload_availability_zone}}
     response = send_post_request('{}/v2.1/servers'.format(nova_ep), token, payload)
     logging.debug(response.text)
-    logging.info("successfully created server {}".format(server_name)) if response.ok else  response.raise_for_status()
+    logging.debug("successfully created server {}".format(server_name)) if response.ok else  response.raise_for_status()
     data= response.json()
     return data["server"]["links"][0]["href"]  
 def create_sriov_server(nova_ep, token, server_name, image_id, keypair_name, flavor_id,  port_id, availability_zone ,security_group_id, host=None):
-    print("Securit Group Id is: "+security_group_id)
+    logging.info("Creating SRIOV Server {}".format(server_name))
     payload= {"server": {"name": server_name, "imageRef": image_id,
         "key_name": keypair_name, "flavorRef": flavor_id, "security_groups": [{"name": security_group_id}],
         "max_count": 1, "min_count": 1, "networks": [{"port": port_id}], 
@@ -247,17 +253,17 @@ def create_sriov_server(nova_ep, token, server_name, image_id, keypair_name, fla
         payload= {"server":{**payload["server"], **payload_manual_host}}
     response = send_post_request('{}/v2.1/servers'.format(nova_ep), token, payload)
     logging.debug(response.text)
-    logging.info("successfully created sriov server {}".format(server_name)) if response.ok else  response.raise_for_status()
+    logging.debug("successfully created sriov server {}".format(server_name)) if response.ok else  response.raise_for_status()
     data= response.json()
     return data["server"]["links"][0]["href"]  
 def get_server_detail(token, server_url):
     response = send_get_request(server_url, token)
-    logging.info("Successfully Received Server Details") if response.ok else response.raise_for_status()
+    logging.debug("Successfully Received Server Details") if response.ok else response.raise_for_status()
     data= response.json()
     return data["server"]["id"]
 def get_server_host(nova_ep, token, server_id):
     response = send_get_request("{}/v2.1/servers/{}".format(nova_ep, server_id) , token)
-    logging.info("Successfully Received Server Details") if response.ok else response.raise_for_status()
+    logging.debug("Successfully Received Server Details") if response.ok else response.raise_for_status()
     data= response.json()
     return data["server"]["OS-EXT-SRV-ATTR:host"]
 
@@ -283,17 +289,17 @@ def get_server_ip(nova_ep, token, server_id, network):
     
     response = send_get_request('{}/v2.1/servers/{}'.format(nova_ep, server_id), token)
     logging.debug(response.text)
-    logging.info("received server network detail") if response.ok else response.raise_for_status()
+    logging.debug("received server network detail") if response.ok else response.raise_for_status()
     return parse_server_ip(response, network, "fixed")
 
 def get_server_floating_ip(nova_ep, token, server_id, network):
     response = send_get_request('{}/v2.1/servers/{}'.format(nova_ep, server_id), token)
-    logging.info("received server network detail") if response.ok else response.raise_for_status()
+    logging.debug("received server network detail") if response.ok else response.raise_for_status()
     return parse_server_ip(response, network, "floating")
 
 def get_server_instance_name(nova_ep, token, server_id):
     response = send_get_request("{}/v2.1/servers/{}".format(nova_ep, server_id) , token)
-    logging.info("Successfully Received Server Details") if response.ok else response.raise_for_status()
+    logging.debug("Successfully Received Server Details") if response.ok else response.raise_for_status()
     data= response.json()
     return data["server"]["OS-EXT-SRV-ATTR:instance_name"]
 def perform_action_on_server(nova_ep,token, server_id, action):
@@ -303,6 +309,7 @@ def perform_action_on_server(nova_ep,token, server_id, action):
     response= send_post_request("{}/v2.1/servers/{}/action".format(nova_ep, server_id), token, payload)
     return response.status_code
 def create_server_snapshot (nova_ep,token, server_id, snapshot_name):
+    logging.info("Creating Snapshot {}".format(snapshot_name))
     payload={
     "createImage" : {
         "name" : snapshot_name,
@@ -319,6 +326,7 @@ def create_server_snapshot (nova_ep,token, server_id, snapshot_name):
         return None
 
 def resize_server(nova_ep,token, server_id, flavor_id):
+    logging.info("Resizing Server ")
     payload= {
     "resize" : {
         "flavorRef" : flavor_id,
@@ -329,6 +337,7 @@ def resize_server(nova_ep,token, server_id, flavor_id):
     logging.debug(response.text)
     return response.status_code
 def reboot_server(nova_ep,token, server_id):
+    logging.info("Rebooting Server ")
     payload={
     "reboot" : {
         "type" : "HARD"
@@ -339,6 +348,7 @@ def reboot_server(nova_ep,token, server_id):
     return response.status_code
 
 def live_migrate_server(nova_ep,token, server_id, host=None, block_migration="auto"):
+    logging.info("Live migration of  Server ")
     payload= {
         "os-migrateLive": {
             "block_migration": block_migration,
@@ -367,10 +377,11 @@ def search_and_create_sriov_server(nova_ep, token, server_name, image_id, key_na
     logging.debug("Server id: "+server_id)  
     return server_id
 def attach_volume_to_server( nova_ep, token, project_id, server_id, volume_id, mount_point):
+    logging.info("Attach volume to server ")
     payload= {"volumeAttachment": {"volumeId": volume_id}}
     response= requests.post("{}/v2.1/servers/{}/os-volume_attachments".format(nova_ep, server_id), headers= {'content-type': "application/json", 'X-Auth-Token': token}, data=json.dumps(payload))
     logging.debug(response.text)
-    logging.info("volume successfully attached to server") if response.ok else response.raise_for_status()
+    logging.debug("volume successfully attached to server") if response.ok else response.raise_for_status()
 
 def get_baremeta_nodes_ip(nova_ep, undercloud_token):
     servers= receive_all_server(nova_ep, undercloud_token)
@@ -380,7 +391,7 @@ def get_baremeta_nodes_ip(nova_ep, undercloud_token):
     return server_ip
 def get_compute_host_list(nova_ep, token):
     response= send_get_request("{}/v2.1/os-hosts".format(nova_ep), token)
-    logging.info("successfully received host list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received host list") if response.ok else response.raise_for_status()
     data= response.json()
     hosts=[]
     for host in data["hosts"]:
@@ -396,14 +407,15 @@ def set_quota(nova_ep, token, project_id, vcpus, instances, ram):
     response= requests.put("{}/v2.1/os-quota-sets/{}".format(nova_ep, project_id),  headers= {'content-type': "application/json", 'X-Auth-Token': token}, data=json.dumps(payload))
     #response= send_post_request("{}/v2.1/os-quota-sets/{}".format(nova_ep, project_id), token, payload)
     #print(response.text)
-    logging.info("successfully updated quota") if response.ok else response.raise_for_status()
+    logging.debug("successfully updated quota") if response.ok else response.raise_for_status()
     
 def get_availability_zones(nova_ep, token):
     response= send_get_request("{}/v2.1/os-aggregates".format(nova_ep), token)
-    logging.info("successfully received availibility zones list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received availibility zones list") if response.ok else response.raise_for_status()
     data= response.json()   
     return data["aggregates"][0]["id"]
 def create_availability_zones(nova_ep, token, name):
+    logging.info("Creating availaility zone {}".format(name))
     payload= {
     "aggregate":
         {
@@ -412,7 +424,7 @@ def create_availability_zones(nova_ep, token, name):
         }
     }
     response= send_post_request("{}/v2.1/os-aggregates".format(nova_ep), token, payload)
-    logging.info("successfully created availibility zone") if response.ok else response.raise_for_status()
+    logging.debug("successfully created availibility zone") if response.ok else response.raise_for_status()
     data= response.json()   
     return data["aggregate"]["id"]
 
@@ -423,7 +435,7 @@ def remove_host_from_zone(nova_ep, token, zone_id, host_name):
         }
     }
     response= send_post_request("{}/v2.1/os-aggregates/{}/action".format(nova_ep,zone_id), token, payload)
-    logging.info("successfully removed host from availability zones ") if response.ok else response.raise_for_status()
+    logging.debug("successfully removed host from availability zones ") if response.ok else response.raise_for_status()
 def add_host_to_zone(nova_ep, token, zone_id, host_name):
     payload= {
     "add_host": {
@@ -431,13 +443,14 @@ def add_host_to_zone(nova_ep, token, zone_id, host_name):
         }
     }
     response= send_post_request("{}/v2.1/os-aggregates/{}/action".format(nova_ep,zone_id), token, payload)
-    logging.info("successfully added host to availability zones ") if response.ok else response.raise_for_status()
+    logging.debug("successfully added host to availability zones ") if response.ok else response.raise_for_status()
 def add_property_availability_zones(nova_ep, token, zone_id):
     payload= {"set_metadata": {"metadata": {"dpdk": "true"}}}
     response= send_post_request("{}/v2.1/os-aggregates/{}/action".format(nova_ep, zone_id), token, payload)
-    logging.info("successfully added property availability zone") if response.ok else response.raise_for_status()
+    logging.debug("successfully added property availability zone") if response.ok else response.raise_for_status()
 
 def create_barbican_image(nova_ep, token, image_name, container_format, disk_format, image_visibility, image_signature, key_id):
+    logging.info("Crerating barbican image {}".format(image_name))
     payload ={
         "container_format": container_format,
         "disk_format":disk_format,
@@ -449,7 +462,7 @@ def create_barbican_image(nova_ep, token, image_name, container_format, disk_for
         "img_signature_key_type": "RSA-PSS"
     }
     response = send_post_request("{}/v2.1/images".format(nova_ep), token, payload)
-    logging.info("successfully created image {}".format(image_name)) if response.ok else response.raise_for_status()
+    logging.debug("successfully created image {}".format(image_name)) if response.ok else response.raise_for_status()
     data= response.json()
     return data["id"]
 #
@@ -461,9 +474,9 @@ def server_build_wait(nova_ep, token, server_ids):
         flag=0
         for server in server_ids:
             status= check_server_status(nova_ep, token, server)
-            logging.info(status)
+            logging.debug(status)
             if not (status == "active" or status=="error"):
-                logging.info("Waiting for server/s to build")
+                logging.debug("Waiting for server/s to build")
                 flag=1
                 time.sleep(10)
         if flag==0:
@@ -473,20 +486,30 @@ def wait_instance_boot(ip):
     while(1):
         response = os.system("ping -c 3 " + ip)
         if response == 0:
-            logging.info ("Ping successfull!") 
+            logging.debug ("Ping successfull!") 
             return True
-        logging.info("Waiting for server to boot")
+        logging.debug("Waiting for server to boot")
         time.sleep(30)
         retries=retries+1
         if(retries==5):
             return False
 
 def delete_server(nova_ep, token, server_id):
-    send_delete_request("{}/v2.1/servers/{}".format(nova_ep,server_id), token)
+    logging.info("deleting server")
+    response= send_delete_request("{}/v2.1/servers/{}".format(nova_ep,server_id), token)
+    logging.debug(response.text)
     time.sleep(5)
 def delete_flavor(nova_ep, token, flavor_id):
-    send_delete_request("{}/v2.1/flavors/{}".format(nova_ep,flavor_id), token)
-
-
+    logging.info("deleting flavor")
+    response= send_delete_request("{}/v2.1/flavors/{}".format(nova_ep,flavor_id), token)
+    logging.debug(response.text)
+def delete_image(nova_ep, token, image_id):
+    logging.info("deleting image")
+    response= send_delete_request("{}/v2/images/{}".format(nova_ep,image_id), token)
+    logging.debug(response.text)
+def delete_kaypair(nova_ep, token, keypair_name):
+    logging.info("deleting keypair")
+    response= send_delete_request("{}/v2.1/os-keypairs/{}".format(nova_ep,keypair_name), token)
+    logging.debug(response.text)
 
 

@@ -45,7 +45,7 @@ def parse_json_to_search_resource(data, resource_name, resource_key, resource_va
             return res[return_key]
             break
     else:
-        logging.info("{} does not exist".format(resource_value))
+        logging.debug("{} does not exist".format(resource_value))
 
 #Barbican
 def add_key_to_store(barbican_ep, token, key):
@@ -59,10 +59,8 @@ def add_key_to_store(barbican_ep, token, key):
     key_id= str(response.text)
     key_id= key_id.split("/")
     key_id= key_id[-1]
-    key_id= key_id.strip('"}')
-    
-    print("Key is: "+key_id)
-    logging.info("successfully add key to barbican") if response.ok else response.raise_for_status()
+    key_id= key_id.strip('"}')    
+    logging.debug("successfully add key to barbican") if response.ok else response.raise_for_status()
     return key_id
 def add_symmetric_key_to_store(barbican_ep, token):
     payload= {"type": "key", "meta": {"name": "swift_key", "algorithm": "aes", "bit_length": 256, "payload_content_type": "application/octet-stream", "mode": "ctr"}}
@@ -74,11 +72,12 @@ def add_symmetric_key_to_store(barbican_ep, token):
     key_id= key_id[-1]
     key_id= key_id.strip('"}')
     
-    print("Key is: "+key_id)
-    logging.info("successfully add key to barbican") if response.ok else response.raise_for_status()
+    logging.debug("Key is: "+key_id)
+    logging.debug("successfully add key to barbican") if response.ok else response.raise_for_status()
     return key_id
 
 def create_secret(barbican_ep, token, name, payload):
+    logging.info("Creating barbican secret")
     key_id=""
     payload= {"name": name, "algorithm": "aes", "mode": "cbc", "bit_length": 256, "secret_type": "opaque" ,
                 "payload": payload, 
@@ -86,15 +85,15 @@ def create_secret(barbican_ep, token, name, payload):
 
     response= send_post_request("{}/v1/secrets/".format(barbican_ep), token, payload)
     logging.debug(response.text)
-    print(response.status_code)
+    logging.debug(response.status_code)
     if (response.status_code==201):
         key_id= str(response.text)
         key_id= key_id.split("/")
         key_id= key_id[-1]
         key_id= key_id.strip('"}')
-        logging.info("successfully add secret to barbican") if response.ok else response.raise_for_status()
+        logging.debug("successfully add secret to barbican") if response.ok else response.raise_for_status()
     else:
-        logging.info("failed to create secret")
+        logging.debug("failed to create secret")
     return key_id
 def update_secret(barbican_ep, token, url, data):
     payload= {"data"}
@@ -109,12 +108,12 @@ def update_secret(barbican_ep, token, url, data):
         logging.error( "request processing failure ", stack_info=True)
         logging.exception(e)
     #response= send_put_request("{}/v1/secrets/".format(barbican_ep), token, payload)
-    print(response)
+    logging.debug(response)
     if (response.status_code==201):
-        logging.info("successfully updated secret to barbican") if response.ok else response.raise_for_status()
+        logging.debug("successfully updated secret to barbican") if response.ok else response.raise_for_status()
         return True
     else:
-        logging.info("failed to update secret")
+        logging.debug("failed to update secret")
         return False
 def get_secret(barbican_ep, token, secret_id):
     response= send_get_request("{}/v1/secrets/{}".format(barbican_ep,secret_id), token)

@@ -22,7 +22,7 @@ def read_settings(settings_file):
 def  read_rc_file(rc_file):
     if os.path.exists(os.path.expanduser(rc_file)):
         
-        logging.info("{} file found".format(rc_file))
+        logging.debug("{} file found".format(rc_file))
         #Find and parse ip
         output= run_linux_command("grep OS_AUTH_URL {}".format(os.path.expanduser(rc_file)))
         output= output.split('=')
@@ -39,8 +39,6 @@ def  read_rc_file(rc_file):
         password= output[1].rstrip("\n")
         parameters={"ip": ip, "username": username, "password": password}
         return parameters
-        
-
     else:
         logging.error("File {} not found".format(rc_file), stack_info=True )
         raise FileNotFoundError ("File {} not found".format(rc_file))
@@ -114,17 +112,15 @@ def read_ini_settings(sah_ip, ini_file):
     settings_dic['sanity_image_url']=sanity_image_url[1]
     #sanity image name
     sanity_image_url=sanity_image_url[1].split("/")
-    settings_dic['image_file_name']=sanity_image_url[-1]
-    print(settings_dic)
+    settings_dic['image_file_name']= "~/{}".format(sanity_image_url[-1])
     return settings_dic    
 def download_qcow_image(url):
-    print("downloading centos qcow image")
     logging.info("Downloading centos qcow image")
     wget.download(url, os.path.expanduser("~/"))
 
 def ssh_into_node(host_ip, command, user_name="heat-admin"):
     try:
-        logging.info("Trying to connect with node {}".format(host_ip))
+        logging.debug("Trying to connect with node {}".format(host_ip))
         # ins_id = conn.get_server(server_name).id
         ssh_client = paramiko.SSHClient()
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -132,10 +128,10 @@ def ssh_into_node(host_ip, command, user_name="heat-admin"):
             ssh_session = ssh_client.connect(host_ip, 22, "root", "Dell0SS!")
         else:
             ssh_session = ssh_client.connect(host_ip, username=user_name, key_filename=os.path.expanduser("~/.ssh/id_rsa")) 
-        logging.info("SSH Session is established")
-        logging.info("Running command in a compute node")
+        logging.debug("SSH Session is established")
+        logging.debug("Running command in a compute node")
         stdin, stdout, stderr = ssh_client.exec_command(command)
-        logging.info("command {} successfully executed on node {}".format(command, host_ip))
+        logging.debug("command {} successfully executed on node {}".format(command, host_ip))
         output= stdout.read().decode('ascii')
         error= stderr.read().decode('ascii')
         return output, error
@@ -144,7 +140,7 @@ def ssh_into_node(host_ip, command, user_name="heat-admin"):
         logging.error("error ocurred when making ssh connection and running command on remote server") 
     finally:
         ssh_client.close()
-        logging.info("Connection from client has been closed") 
+        logging.debug("Connection from client has been closed") 
     
 
 

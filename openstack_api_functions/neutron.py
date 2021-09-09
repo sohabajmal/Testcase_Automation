@@ -28,14 +28,12 @@ def send_post_request(api_url, token, payload, header='application/json'):
        logging.exception(e)
 def send_delete_request(api_url, token, header='application/json' ):
     try:
-        requests.delete(api_url, headers= {'content-type':header, 'X-Auth-Token': token})
-        time.sleep(5)
+        return requests.delete(api_url, headers= {'content-type':header, 'X-Auth-Token': token})
     except Exception as e:
        logging.error( "request processing failure ", stack_info=True)
        logging.exception(e)
 def delete_resource(api_url, token):
     send_delete_request(api_url, token)
-
 
 def parse_json_to_search_resource(data, resource_name, resource_key, resource_value, return_key):
     data= data.json()
@@ -45,17 +43,17 @@ def parse_json_to_search_resource(data, resource_name, resource_key, resource_va
             return res[return_key]
             break
     else:
-        logging.info("{} does not exist".format(resource_value))
+        logging.debug("{} does not exist".format(resource_value))
 
 def search_network(neutron_ep, token, network_name):
     #get list of networks
     response= send_get_request("{}/v2.0/networks".format(neutron_ep), token)
-    logging.info("successfully received networks list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received networks list") if response.ok else response.raise_for_status()
     return parse_json_to_search_resource(response, "networks", "name", network_name, "id")
 def get_network_detail(neutron_ep, token, network_id):
     #get list of networks
     response= send_get_request("{}/v2.0/networks/{}".format(neutron_ep, network_id), token)
-    logging.info("successfully received networks list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received networks list") if response.ok else response.raise_for_status()
     response= response.json()
     return response
 '''
@@ -63,6 +61,7 @@ Networks
 '''
 def create_network(neutron_ep, token, network_name, mtu_size, network_provider_type, is_external):
     #create network
+    logging.info("Creating Network {}".format(network_name))
     payload= {
         "network": {
             "name": network_name,
@@ -76,7 +75,7 @@ def create_network(neutron_ep, token, network_name, mtu_size, network_provider_t
 
     response= send_post_request('{}/v2.0/networks'.format(neutron_ep), token, payload)
     logging.debug(response.text)
-    logging.info("successfully created network {}".format(network_name)) if response.ok else response.raise_for_status()
+    logging.debug("successfully created network {}".format(network_name)) if response.ok else response.raise_for_status()
     data=response.json()
     return data['network']['id']
 def search_and_create_network(neutron_ep, token, network_name, mtu_size, network_provider_type, is_external):
@@ -86,6 +85,7 @@ def search_and_create_network(neutron_ep, token, network_name, mtu_size, network
     logging.debug("network id is: {}".format(network_id))
     return network_id
 def create_port(neutron_ep, token, network_id, subnet_id, name, property=None ):
+    logging.info("Creating Network Port {}".format(name))
     payload= {"port": {
         "binding:vnic_type": "direct", 
         "network_id": network_id, 
@@ -98,7 +98,7 @@ def create_port(neutron_ep, token, network_id, subnet_id, name, property=None ):
         payload= {"port":{**payload["port"], **payload_port_property}}
     response= send_post_request('{}/v2.0/ports'.format(neutron_ep), token, payload)
     logging.debug(response.text)
-    logging.info("successfully created port") if response.ok else response.raise_for_status()
+    logging.debug("successfully created port") if response.ok else response.raise_for_status()
     data=response.json()
     return data["port"]["id"], data["port"]["fixed_ips"][0]["ip_address"]
 
@@ -108,11 +108,12 @@ Subnets
 def search_subnet(neutron_ep, token, subnet_name):
     #get list of subnets
     response= send_get_request("{}/v2.0/subnets".format(neutron_ep), token)
-    logging.info("Successfully Received Subnet List") if response.ok else response.raise_for_status()
+    logging.debug("Successfully Received Subnet List") if response.ok else response.raise_for_status()
     return parse_json_to_search_resource(response, "subnets", "name", subnet_name, "id")
 
 def create_subnet(neutron_ep, token, subnet_name, network_id, cidr, external= False, gateway=None, pool_start= None, pool_end= None):
     #create internal subnet
+    logging.info("Creating Subnet {}".format(subnet_name))
     payload= {
         "subnet": {
             "name": subnet_name,
@@ -126,7 +127,7 @@ def create_subnet(neutron_ep, token, subnet_name, network_id, cidr, external= Fa
     if external== True:
         payload= {"subnet":{**payload["subnet"], **payload_external_subnet}}
     response= send_post_request("{}/v2.0/subnets".format(neutron_ep), token, payload)
-    logging.info("successfully created subnet") if response.ok else response.raise_for_status()
+    logging.debug("successfully created subnet") if response.ok else response.raise_for_status()
     data= response.json()
     return data['subnet']['id']
 def search_and_create_subnet(neutron_ep, token, subnet_name, network_id, subnet_cidr):
@@ -141,11 +142,12 @@ Router
 '''
 def search_router(neutron_ep, token, router_name):
     response= send_get_request("{}/v2.0/routers".format(neutron_ep), token)
-    logging.info("successfully received router list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received router list") if response.ok else response.raise_for_status()
 
     return parse_json_to_search_resource(response, "routers", "name", router_name, "id")
 
 def create_router(neutron_ep, token, router_name, network_id, subnet_id):
+    logging.info("Creating Router {}".format(router_name))
     payload={"router":
         {"name": router_name,
         "admin_state_up":" true",
@@ -163,35 +165,35 @@ def create_router(neutron_ep, token, router_name, network_id, subnet_id):
     }
     response= send_post_request('{}/v2.0/routers'.format(neutron_ep), token, payload)
     logging.debug(response.text)
-    logging.info("successfully created router {}".format(router_name)) if response.ok else response.raise_for_status()  
+    logging.debug("successfully created router {}".format(router_name)) if response.ok else response.raise_for_status()  
     data= response.json()
     return data['router']['id']
 def set_router_gateway(neutron_ep, token, router_id, network_id):
-    print(router_id)
     payload={"router": {"external_gateway_info": {"network_id": network_id}}}
     response= send_post_request("{}/v2.0/routers/{}".format(neutron_ep,router_id), token, payload)
     logging.debug(response.text)
-    logging.info("successfully set gateway to router {}".format(router_id)) if response.ok else response.raise_for_status()  
+    logging.debug("successfully set gateway to router {}".format(router_id)) if response.ok else response.raise_for_status()  
 def add_interface_to_router(neutron_ep, token, router_id, subnet_id):
+    logging.info("Adding interface to router Network")
     payload={
     "subnet_id": subnet_id
     }
     
     response= send_put_request('{}/v2.0/routers/{}/add_router_interface'.format(neutron_ep,router_id), token, payload)
     logging.debug(response.text)
-    logging.info("successfully added interface to router {}".format(router_id)) if response.ok else response.raise_for_status()  
-def remove_interface_to_router(neutron_ep, token, router_id, subnet_id):
+    logging.debug("successfully added interface to router {}".format(router_id)) if response.ok else response.raise_for_status()  
+def remove_interface_from_router(neutron_ep, token, router_id, subnet_id):
     payload={
     "subnet_id": subnet_id
     }
     
     response= send_put_request('{}/v2.0/routers/{}/remove_router_interface'.format(neutron_ep,router_id), token, payload)
     logging.debug(response.text)
-    logging.info("successfully removed interface from router {}".format(router_id)) if response.ok else response.raise_for_status()  
-
+    logging.debug("successfully removed interface from router {}".format(router_id)) if response.ok else response.raise_for_status()  
+    time.sleep(3)
 def get_default_security_group_id(neutron_ep, token, project_id):
     response= send_get_request("{}/v2.0/security-groups".format(neutron_ep), token)
-    logging.info("successfully received security group list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received security group list") if response.ok else response.raise_for_status()
     data= response.json()
     for res in (data["security_groups"]):
         if(res["name"]== "default" and res["tenant_id"]== project_id):
@@ -199,7 +201,7 @@ def get_default_security_group_id(neutron_ep, token, project_id):
             break
 def search_security_group(neutron_ep, token, security_group_name):
     response= send_get_request("{}/v2.0/security-groups".format(neutron_ep), token)
-    logging.info("successfully received security group list") if response.ok else response.raise_for_status()
+    logging.debug("successfully received security group list") if response.ok else response.raise_for_status()
     return parse_json_to_search_resource(response, "security_groups", "name", security_group_name, "id")
 
 def create_security_group(neutron_ep, token, security_group_name):
@@ -209,7 +211,7 @@ def create_security_group(neutron_ep, token, security_group_name):
         }
     }
     response = send_post_request('{}/v2.0/security-groups'.format(neutron_ep), token, payload)
-    logging.info("successfully created security Group {}".format(security_group_name)) if response.ok else response.raise_for_status()
+    logging.debug("successfully created security Group {}".format(security_group_name)) if response.ok else response.raise_for_status()
     data= response.json()
     return data["security_group"]["id"]
 
@@ -221,6 +223,7 @@ def search_and_create_security_group(neutron_ep, token, security_group_name):
     return security_group_id
 
 def add_icmp_rule_to_security_group(neutron_ep, token, security_group_id):
+    logging.info("Adding icmp rules to security group")
     payload= {"security_group_rule":{
             "direction": "ingress",
             "ethertype":"IPv4",
@@ -231,8 +234,9 @@ def add_icmp_rule_to_security_group(neutron_ep, token, security_group_id):
         }
     }
     response= send_post_request('{}/v2.0/security-group-rules'.format(neutron_ep), token, payload)
-    logging.info("Successfully added ICMP rule to Security Group") if response.ok else response.raise_for_status()
+    logging.debug("Successfully added ICMP rule to Security Group") if response.ok else response.raise_for_status()
 def add_ssh_rule_to_security_group(neutron_ep, token, security_group_id):
+    logging.info("Adding ssh rule to security group")
     payload= {"security_group_rule": {
         "direction": "ingress",
         "ethertype":"IPv4",
@@ -245,7 +249,7 @@ def add_ssh_rule_to_security_group(neutron_ep, token, security_group_id):
         }
         }
     response= send_post_request('{}/v2.0/security-group-rules'.format(neutron_ep), token, payload)
-    logging.info("Successfully added SSH rule to Security Group") if response.ok else response.raise_for_status()
+    logging.debug("Successfully added SSH rule to Security Group") if response.ok else response.raise_for_status()
 
 def parse_port_response(data, server_fixed_ip):
     data= data.json()
@@ -255,7 +259,7 @@ def parse_port_response(data, server_fixed_ip):
 
 def get_ports(neutron_ep, token, network_id, server_ip):
     response= send_get_request("{}/v2.0/ports?network_id={}".format(neutron_ep, network_id), token)
-    logging.info("successfully received ports list ") if response.ok else response.raise_for_status()
+    logging.debug("successfully received ports list ") if response.ok else response.raise_for_status()
     return parse_port_response(response, server_ip)
 
 def create_floating_ip(neutron_ep, token, network_id, subnet_id, server_ip_address, server_port_id):
@@ -270,7 +274,7 @@ def create_floating_ip(neutron_ep, token, network_id, subnet_id, server_ip_addre
     time.sleep(10)
     response= send_post_request("{}/v2.0/floatingips".format(neutron_ep), token, payload)
     logging.debug(response.text)
-    logging.info("successfully assigned floating ip to server") if response.ok else response.raise_for_status()
+    logging.debug("successfully assigned floating ip to server") if response.ok else response.raise_for_status()
     data= response.json()
     return data["floatingip"]["floating_ip_address"], data["floatingip"]["id"]
 def create_floatingip_wo_port(neutron_ep, token, network_id ):
@@ -283,7 +287,7 @@ def create_floatingip_wo_port(neutron_ep, token, network_id ):
     time.sleep(10)
     logging.debug(response.text)
     data=response.json()
-    logging.info("successfully created floating ip") if response.ok else response.raise_for_status()
+    logging.debug("successfully created floating ip") if response.ok else response.raise_for_status()
     return data["floatingip"]["floating_ip_address"], data["floatingip"]["id"]
 def assign_ip_to_port(neutron_ep, token, port_id, floatingip_id ):
     payload= {
@@ -294,5 +298,12 @@ def assign_ip_to_port(neutron_ep, token, port_id, floatingip_id ):
     response= send_put_request("{}/v2.0/floatingips/{}".format(neutron_ep, floatingip_id), token, payload)
     logging.debug(response.text)
     time.sleep(10)
-    logging.info("successfully assigned floating to port") if response.ok else response.raise_for_status()
-
+    logging.debug("successfully assigned floating to port") if response.ok else response.raise_for_status()
+def delete_network(neutron_ep, token, network_id):
+    logging.info("deleting Network")
+    response= send_delete_request("{}/v2.0/networks/{}".format(neutron_ep,network_id), token)
+    logging.debug(response.text)
+def delete_router(neutron_ep, token, router_id):
+    logging.info("deleting router")
+    response= send_delete_request("{}/v2.0/routers/{}".format(neutron_ep,router_id), token)
+    logging.debug(response.text)

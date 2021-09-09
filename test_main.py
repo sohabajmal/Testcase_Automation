@@ -22,18 +22,18 @@ import time
 
 if not os.path.exists('logs'):
     os.makedirs('logs')
-log_file= "logs/"+ time.strftime("%d-%m-%Y-%H-%M-%S")+".log"
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(message)s',
-                    handlers=[logging.FileHandler(log_file),
-                              logging.StreamHandler()])
+#log_file= "logs/"+ time.strftime("%d-%m-%Y-%H-%M-%S")+".log"
+#logging.basicConfig(level=logging.DEBUG,
+#                    format='%(asctime)s %(message)s',
+#                    handlers=[logging.FileHandler(log_file),
+#                             logging.StreamHandler()])
 
-deployed_feature = ["numa", "hugepages", "barbican"]
 
 # Fixtures provide a fixed baseline so that tests execute reliably and produce consistent, repeatable, results. 
 # They have 4 scopes: classes, modules, packages or session
 
 #read settings from settings.json
+deployed_features=[]
 @pytest.fixture(scope="session", name="settings")
 def read_user_settings():
     return read_settings("settings.json")
@@ -69,9 +69,27 @@ def undercloud_authentication_token(undercloud, endpoints):
 def overcloud_authentication_token(overcloud, endpoints):
     return get_authentication_token(endpoints.get("keystone"), overcloud.get("username"), overcloud.get("password"))
 
+#get name and IP adress of bareetal nodes
+@pytest.fixture(scope="session", name="baremetal_nodes")
+def get_baremetal_nodes_detail(endpoints, undercloud_token):
+    baremetal_nodes_detail= get_baremeta_nodes_ip(endpoints.get("undercloud_nova"), undercloud_token)
+    return baremetal_nodes_detail
+
+    
 #create basic openstack environment     
-@pytest.fixture(scope="session", name="environment")
+@pytest.fixture(scope="session", name="environment", autouse=True)
 def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini_file):
+    #list of features enabled
+    print("Creating OpenStack Environment")
+    print("\n")
+    for key, value in ini_file.items():
+        if(value== "true"):
+            key=key.split("_")
+            deployed_features.append(key[0])
+            if(key[0]== "smart"):
+                print("Hardware Offloading is Enabled")
+            else:
+                print("{} is Enabled".format(key[0].capitalize()))
     #create networks
     if ini_file.get("mtu_size")== "9000":
         network1_id = search_and_create_network(endpoints.get("neutron"), overcloud_token, settings["network1_name"], 9000, settings["network_provider_type"], False)
@@ -106,42 +124,40 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini
     keypair_public_key= "" 
     keypair_key= search_keypair(endpoints.get("nova"), overcloud_token, settings["key_name"])
     keypair_private_key=""
-    logging.info("searching ssh key")
+    logging.debug("searching ssh key")
     keyfile_name= os.path.expanduser(settings["key_file"])
     if(keypair_key != None):
-        logging.info("deleting old ssh key")
-        delete_resource("{}/v2.1/os-keypairs/{}".format(endpoints.get("nova"), settings["key_name"]), overcloud_token)
-
+        #delete_resource("{}/v2.1/os-keypairs/{}".format(endpoints.get("nova"), settings["key_name"]), overcloud_token)
+        delete_kaypair(endpoints.get("nova"), overcloud_token, settings["key_name"])
     keypair_private_key= create_keypair(endpoints.get("nova"), overcloud_token, settings["key_name"])
-    logging.info("ssh key created")
+    logging.debug("ssh key created")
     try:
-        logging.info("deleting old private file")
+        logging.debug("deleting old private file")
         os.system("sudo rm "+keyfile_name)
     except OSError:
         pass
-    logging.info("creating key file")
+    logging.debug("creating key file")
     keyfile = open(keyfile_name, "w")
     keyfile.write(keypair_private_key)
     keyfile.close()
-    logging.info("setting permission to private key file")
+    logging.debug("setting permission to private key file")
     command= "chmod 400 "+keyfile_name
     os.system(command)
 
     #download centos imgae if it is not downloaded
-    if (os.path.isfile(os.path.expanduser("~/{}".format(ini_file.get("image_file_name"))))):
+    if (os.path.isfile(os.path.expanduser(ini_file.get("image_file_name")))):
         logging.info("centos image file aready exists")
-        print("centos image file aready exists")
     else:
         download_qcow_image(ini_file.get("sanity_image_url"))
 
     #create image
     if ini_file.get("barbican_enabled")=="false":
-        image_id= search_and_create_image(endpoints.get("image"), overcloud_token, c["image_name"], "bare", "qcow2", "public", os.path.expanduser(ini_file.get("image_file_name")))
+        image_id= search_and_create_image(endpoints.get("image"), overcloud_token, settings["image_name"], "bare", "qcow2", "public", os.path.expanduser(ini_file.get("image_file_name")))
     else:
         image_id= search_image(endpoints.get("nova"), overcloud_token, settings["image_name"])
         if(image_id is None):
             key= create_ssl_certificate(settings)
-            image_signature= sign_image(settings)
+            image_signature= sign_image(settings, ini_file.get("image_file_name"))
             barbican_key_id= add_key_to_store(endpoints.get("barbican"), overcloud_token, key)
             image_id= create_barbican_image(endpoints.get("image"), overcloud_token, settings["image_name"], "bare", "qcow2", "public", image_signature, barbican_key_id)
         status= get_image_status(endpoints.get("image"), overcloud_token, image_id)
@@ -152,19 +168,33 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini
     #create flavor    
     flavor_id= search_and_create_flavor(endpoints.get("nova"), overcloud_token, settings["flavor1"], 4096, 2, 150)
     if(ini_file.get("ovs_dpdk_enabled")=="true"):
-        logging.info("putting ovsdpdk specs in flavor")
+        logging.debug("putting ovsdpdk specs in flavor")
         put_ovs_dpdk_specs_in_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
     elif(ini_file.get("numa_enable")=="true" or ini_file.get("sriov_enabled")=="true"):
-        logging.info("putting numa specs in flavor")
+        logging.debug("putting numa specs in flavor")
         put_extra_specs_in_flavor(endpoints.get("nova"), overcloud_token, flavor_id, True)
-    return network1_id, network2_id, subnet1_id, subnet2_id, router_id, security_group_id, image_id, flavor_id, keypair_public_key
+    yield network1_id, network2_id, subnet1_id, subnet2_id, router_id, security_group_id, image_id, flavor_id, keypair_public_key
+    
+    #Clean Environment
+    '''
+    print("\n Cleaning Environment")
+    delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+    delete_image(endpoints.get("image"), overcloud_token, image_id)
+    remove_interface_from_router(endpoints.get("neutron"), overcloud_token, router_id, subnet2_id)
+    remove_interface_from_router(endpoints.get("neutron"), overcloud_token, router_id, subnet1_id)
+    delete_network(endpoints.get("neutron"), overcloud_token, network1_id)
+    delete_network(endpoints.get("neutron"), overcloud_token, network2_id)
+    delete_router(endpoints.get("neutron"), overcloud_token, router_id)
+    delete_kaypair(endpoints.get("nova"), overcloud_token, settings["key_name"])
+    '''
+   
 
-
-#Testcases 
 #Numa testcases
 @pytest.mark.numa
 @pytest.mark.functional
 def test_verify_instance_creation_with_numa_flavor(settings, environment, endpoints, overcloud_token):
+    if "numa" not in deployed_features:
+        pytest.skip("Numa is disabled in ini file")
     #create flavor
     flavor_id= search_and_create_flavor(endpoints.get("nova"), overcloud_token, "numa_flavor", 4096, 4, 10)
     #create server
@@ -172,23 +202,31 @@ def test_verify_instance_creation_with_numa_flavor(settings, environment, endpoi
     #check status of server is active or not
     assert check_server_status(endpoints.get("nova"), overcloud_token, server_id) == "active"
     #delete server
-    delete_server(endpoints.get("nova"), overcloud_token, server_id)
+    #delete_server(endpoints.get("nova"), overcloud_token, server_id)
     #delete falvor
-    delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)    
+    #delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)    
+
 
 @pytest.mark.numa
 @pytest.mark.negative
-def test_number_of_vcpus_pinned_are_same_as_the_vcpus_in_numa_flavour(settings, environment, endpoints, overcloud_token):
-    #verify cpus of instance are 4 or not 
-    assert get_vcpus_of_instance(settings, environment, endpoints.get("nova"), overcloud_token) == "4"
-
+def test_number_of_vcpus_pinned_are_same_as_the_vcpus_in_numa_flavour(settings, environment, endpoints, overcloud_token, baremetal_nodes):
+    #verify vcpus of instance are 4 or not 
+    if "numa" not in deployed_features:
+        pytest.skip("Numa is disabled in ini file")
+    assert get_vcpus_of_instance(settings, environment, endpoints.get("nova"), overcloud_token, baremetal_nodes) == "4"
 
 #Barbican Testases
-#@pytest.mark.skipif(ini_file.get("barbican_enabled"=="False") , reason="Barbican is disabled in ini file")
-#@pytest.mark.skipif("barbican" not in deployed_feature , reason="Barbican is disabled in ini file")
-
 @pytest.mark.barbican
 @pytest.mark.functional
 def test_create_barbican_secret(endpoints, overcloud_token):
+    if "barbican" not in deployed_features:
+        pytest.skip("Barbican is disabled in ini file")
+    assert create_barbican_secret(endpoints.get("barbican"), overcloud_token) != "" or None
+
+#SRIOV Testases
+@pytest.mark.numa
+def test_dummy_sriov(endpoints, overcloud_token, environment):
+    if "sriov" not in deployed_features:
+        pytest.skip("Sriov is disabled in ini file")
     assert create_barbican_secret(endpoints.get("barbican"), overcloud_token) != "" or None
 
