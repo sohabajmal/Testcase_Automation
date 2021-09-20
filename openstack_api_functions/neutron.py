@@ -265,7 +265,6 @@ def get_ports(neutron_ep, token, network_id, server_ip):
 def create_floating_ip(neutron_ep, token, network_id, subnet_id, server_ip_address, server_port_id):
     payload= {"floatingip": 
              {"floating_network_id":network_id,
-             
               "subnet_id": subnet_id,
               "fixed_ip_address": server_ip_address,
                "port_id": server_port_id
@@ -299,6 +298,14 @@ def assign_ip_to_port(neutron_ep, token, port_id, floatingip_id ):
     logging.debug(response.text)
     time.sleep(10)
     logging.debug("successfully assigned floating to port") if response.ok else response.raise_for_status()
+def get_floating_ip_id(neutron_ep, token, floating_ip):
+    response= send_get_request("{}/v2.0/floatingips".format(neutron_ep), token)
+    logging.debug("successfully received floating ips list") if response.ok else response.raise_for_status()
+    data= response.json()
+    for ips in data["floatingips"]:
+        if ips["floating_ip_address"] == floating_ip:
+            return ips["id"]   
+
 def delete_network(neutron_ep, token, network_id):
     logging.info("deleting Network")
     response= send_delete_request("{}/v2.0/networks/{}".format(neutron_ep,network_id), token)
@@ -307,3 +314,6 @@ def delete_router(neutron_ep, token, router_id):
     logging.info("deleting router")
     response= send_delete_request("{}/v2.0/routers/{}".format(neutron_ep,router_id), token)
     logging.debug(response.text)
+
+
+

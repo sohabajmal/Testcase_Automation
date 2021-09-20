@@ -4,6 +4,9 @@ import logging
 import subprocess
 import paramiko
 import wget
+from xml.dom import minidom
+from openstack_api_functions.nova import *
+from openstack_api_functions.neutron import *
 
 def read_settings(settings_file):
     #read settings from json file
@@ -65,7 +68,7 @@ def create_services_endpoints(undercloud_ip, overcloud_ip):
 #def create_ssh_pem_file():
 def read_ini_settings(sah_ip, ini_file):
     settings_dic={}
-    command= "grep -e mtu_size_global_default= -e nic_env_file= -e hpg_enable= -e hpg_size= -e numa_enable= -e ovs_dpdk_enable= -e sriov_enable= -e smart_nic= -e dvr_enable= -e barbican_enable= -e octavia_enable= -e overcloud_name= -e sanity_image_url= {}".format(ini_file)
+    command= "grep -e mtu_size_global_default= -e nic_env_file= -e hpg_enable= -e hpg_size= -e numa_enable= -e ovs_dpdk_enable= -e sriov_enable= -e smart_nic= -e dvr_enable= -e barbican_enable= -e octavia_enable= -e overcloud_name= -e sanity_image_url= -e domain= {}".format(ini_file)
 
     settings= ssh_into_node(sah_ip, command, "root")
     
@@ -107,13 +110,17 @@ def read_ini_settings(sah_ip, ini_file):
     #overcloud name
     overcloud_name=settings[11].split("=")
     settings_dic['overcloud_name']=overcloud_name[1]
+    #sanity image name
+    domain=settings[12].split("=")
+    settings_dic['domain']= domain[1]
     #sanity image url
-    sanity_image_url=settings[12].split("=")
+    sanity_image_url=settings[13].split("=")
     settings_dic['sanity_image_url']=sanity_image_url[1]
     #sanity image name
     sanity_image_url=sanity_image_url[1].split("/")
     settings_dic['image_file_name']= "~/{}".format(sanity_image_url[-1])
-    return settings_dic    
+    return settings_dic
+    
 def download_qcow_image(url):
     logging.info("Downloading centos qcow image")
     wget.download(url, os.path.expanduser("~/"))
@@ -142,5 +149,55 @@ def ssh_into_node(host_ip, command, user_name="heat-admin"):
         ssh_client.close()
         logging.debug("Connection from client has been closed") 
     
+def create_report():
+    print("Hello from xml")
+    file = minidom.parse('repo.xml')
 
+def create_instance(settings, environment, nova_ep, neutron_ep, token, flavor_id, server_name, network_name, network_id, compute=None, feature=None):
+    server={}
+    server_id= search_and_create_server(nova_ep, token, server_name, environment.get("image_id"), settings["key_name"], flavor_id,  network_id, environment.get("security_group_id"), compute)
+    server["id"]=server_id
+    server_build_wait(nova_ep, token, [server_id])
+    status= check_server_status(nova_ep, token, server_id)
+    server["status"]=status
+    if(status=="active"):
+        server_ip= get_server_ip(nova_ep, token, server_id, network_name)
+        server["ip"]=server_ip
+        floating_ip= get_server_floating_ip(nova_ep, token, server_id, network_name)
+        floating_ip_id= get_floating_ip_id(neutron_ep, token, floating_ip)
+        server["floating_ip_id"]=floating_ip_id
+        if floating_ip is None:         
+            server_port= get_ports(neutron_ep, token, network_id, server_ip)
+            public_network_id= search_network(neutron_ep, token, settings["external_network_name"])
+            public_subnet_id= search_subnet(neutron_ep, token, settings["external_subnet"])
+            floating_ip, floating_ip_id= create_floating_ip(neutron_ep, token, public_network_id, public_subnet_id, server_ip, server_port)
+            #Wait for instance to complete boot
+            wait_instance_boot(floating_ip, settings["instance_boot_wait_retires"])
+        server["floating_ip"]=floating_ip
+        server["floating_ip_id"]=floating_ip_id
+       
+    return server
+def cold_migrate_instance(nova_ep, token, instance_id, instance_floating_ip, settings):
+    response=  perform_action_on_server(nova_ep,token, instance_id, "migrate")
+    logging.info("Waiting for migration")
+    time.sleep(30)
+    if response==202:
+        logging.info("confirming migration")
+        perform_action_on_server(nova_ep,token, instance_id, "confirmResize")
+        time.sleep(30)
+        wait_instance_boot(instance_floating_ip, settings["instance_boot_wait_retires"])
+    return response
 
+def get_compute_name(baremetal_nodes, compute, domain):
+    compute= [key for key, val in baremetal_nodes.items() if compute in key]
+    compute= "{}.{}".format(compute[0],domain)
+    return compute
+def get_node_ip(baremetal_nodes, node_name):
+    ip= [val for key, val in baremetal_nodes.items() if node_name in key]
+    return ip[0]
+
+def perform_action_on_instances(instances, nova_ep, token, action):
+    for instance in instances:   
+        perform_action_on_server(nova_ep,token, instance.get("id"), action)
+    logging.debug("Waiting for instances to pause")
+    time.sleep(30)

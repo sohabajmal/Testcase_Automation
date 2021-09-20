@@ -334,8 +334,8 @@ def resize_server(nova_ep,token, server_id, flavor_id):
         }
     }
     response= send_post_request("{}/v2.1/servers/{}/action".format(nova_ep, server_id), token, payload)
-    logging.debug(response.text)
-    return response.status_code
+    #logging.debug(response.text)
+    #return response.status_code
 def reboot_server(nova_ep,token, server_id):
     logging.info("Rebooting Server ")
     payload={
@@ -357,6 +357,8 @@ def live_migrate_server(nova_ep,token, server_id, host=None, block_migration="au
         }
     response=send_post_request("{}/v2.1/servers/{}/action".format(nova_ep, server_id), token, payload)
     logging.debug(response.text)
+    logging.info("Waiting for live migration")
+    time.sleep(30)
     #logging.info(response.text)
     return response.status_code
 
@@ -481,7 +483,7 @@ def server_build_wait(nova_ep, token, server_ids):
                 time.sleep(10)
         if flag==0:
             break
-def wait_instance_boot(ip):
+def wait_instance_boot(ip, retries):
     retries=0
     while(1):
         response = os.system("ping -c 3 " + ip)
@@ -491,14 +493,16 @@ def wait_instance_boot(ip):
         logging.debug("Waiting for server to boot")
         time.sleep(30)
         retries=retries+1
-        if(retries==5):
+        if(retries == retries):
             return False
 
-def delete_server(nova_ep, token, server_id):
+def delete_server(nova_ep, neutron_ep, token, server):
     logging.info("deleting server")
-    response= send_delete_request("{}/v2.1/servers/{}".format(nova_ep,server_id), token)
+    response= send_delete_request("{}/v2.1/servers/{}".format(nova_ep,server.get("id")), token)
     logging.debug(response.text)
     time.sleep(5)
+    delete_floating_ip(neutron_ep, token, server.get("floating_ip_id"))
+
 def delete_flavor(nova_ep, token, flavor_id):
     logging.info("deleting flavor")
     response= send_delete_request("{}/v2.1/flavors/{}".format(nova_ep,flavor_id), token)
@@ -510,6 +514,11 @@ def delete_image(nova_ep, token, image_id):
 def delete_kaypair(nova_ep, token, keypair_name):
     logging.info("deleting keypair")
     response= send_delete_request("{}/v2.1/os-keypairs/{}".format(nova_ep,keypair_name), token)
+    logging.debug(response.text)
+
+def delete_floating_ip(neutron_ep, token, floating_ip_id):
+    logging.info("deleting floating ip")
+    response=send_delete_request("{}/v2.0/floatingips/{}".format(neutron_ep, floating_ip_id), token)
     logging.debug(response.text)
 
 
