@@ -168,7 +168,7 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini
     if (keypair_key == None):
         keypair_private_key= create_keypair(endpoints.get("nova"), overcloud_token, settings["key_name"])
         logging.debug("ssh key created")
-        if os.path.exists(keyfile_name)
+        if os.path.exists(keyfile_name):
             try:
                 #delete if .pem file already exists
                 logging.debug("deleting old private file")
@@ -246,7 +246,6 @@ def delete_environment(endpoints, overcloud_token, environment, settings):
         os.system("sudo rm "+keyfile_name)
     except OSError:
         pass
-    print("@@@@@@@@@@@@@@@@@@@@@")
     #delte servers if exist
     server1_id= search_server(endpoints.get("nova"), overcloud_token, settings["server_1_name"])
     if server1_id is not None:
@@ -254,7 +253,6 @@ def delete_environment(endpoints, overcloud_token, environment, settings):
     server2_id= search_server(endpoints.get("nova"), overcloud_token, settings["server_1_name"])
     if server2_id is not None:
         delete_server_with_id(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, server2_id)
-     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     #delte flavors if exist
     flavor1_id=(endpoints.get("nova"), overcloud_token, settings["flavor1_name"])
     if flavor1_id is not None:
