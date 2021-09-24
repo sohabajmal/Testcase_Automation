@@ -39,7 +39,7 @@ def parse_json_to_search_resource(data, resource_name, resource_key, resource_va
     data= data.json()
     for res in (data[resource_name]):
         if resource_value in res[resource_key]:
-            logging.warning("{} already exists".format(resource_value))
+            logging.debug("{} already exists".format(resource_value))
             return res[return_key]
             break
     else:
@@ -59,7 +59,7 @@ def get_network_detail(neutron_ep, token, network_id):
 '''
 Networks
 '''
-def create_network(neutron_ep, token, network_name, mtu_size, network_provider_type, is_external):
+def create_network(neutron_ep, token, network_name, mtu_size, network_provider_type, is_external, provider_physical_network="physint", provider_segment=None):
     #create network
     logging.info("Creating Network {}".format(network_name))
     payload= {
@@ -69,19 +69,24 @@ def create_network(neutron_ep, token, network_name, mtu_size, network_provider_t
             "mtu": mtu_size,
             "provider:network_type": network_provider_type,
             "router:external": is_external,
-            "provider:physical_network": "physint"
+            "provider:physical_network": provider_physical_network
             }
         }
+    payload_public_network={
+        "provider:segmentation_id": provider_segment,
+        }
+    if provider_segment is not None:
+        payload= {"network":{**payload["network"], **payload_public_network}}
 
     response= send_post_request('{}/v2.0/networks'.format(neutron_ep), token, payload)
     logging.debug(response.text)
     logging.debug("successfully created network {}".format(network_name)) if response.ok else response.raise_for_status()
     data=response.json()
     return data['network']['id']
-def search_and_create_network(neutron_ep, token, network_name, mtu_size, network_provider_type, is_external):
+def search_and_create_network(neutron_ep, token, network_name, mtu_size, network_provider_type, is_external,  provider_physical_network="physint", provider_segment=None):
     network_id= search_network(neutron_ep, token, network_name)    
     if network_id is None:
-        network_id =create_network(neutron_ep, token, network_name, mtu_size, network_provider_type, False)  
+        network_id =create_network(neutron_ep, token, network_name, mtu_size, network_provider_type, is_external, provider_physical_network, provider_segment)  
     logging.debug("network id is: {}".format(network_id))
     return network_id
 def create_port(neutron_ep, token, network_id, subnet_id, name, property=None ):
@@ -122,18 +127,21 @@ def create_subnet(neutron_ep, token, subnet_name, network_id, cidr, external= Fa
             "cidr": cidr
             }
         }
-    payload_external_subnet={"enable_dhcp": "true","gateway_ip": gateway,
-               "allocation_pools": [{"start": pool_start, "end": pool_end}]}
-    if external== True:
+    payload_external_subnet={
+        "enable_dhcp": "true",
+        "gateway_ip": gateway,
+        "allocation_pools": [{"start": pool_start, "end": pool_end}]
+        }
+    if external== "true":
         payload= {"subnet":{**payload["subnet"], **payload_external_subnet}}
     response= send_post_request("{}/v2.0/subnets".format(neutron_ep), token, payload)
     logging.debug("successfully created subnet") if response.ok else response.raise_for_status()
     data= response.json()
     return data['subnet']['id']
-def search_and_create_subnet(neutron_ep, token, subnet_name, network_id, subnet_cidr):
+def search_and_create_subnet(neutron_ep, token, subnet_name, network_id, subnet_cidr, external= False, gateway=None, pool_start= None, pool_end= None):
     subnet_id= search_subnet(neutron_ep, token, subnet_name)    
     if subnet_id is None:
-        subnet_id =create_subnet(neutron_ep, token, subnet_name, network_id, subnet_cidr) 
+        subnet_id =create_subnet(neutron_ep, token, subnet_name, network_id, subnet_cidr, external, gateway, pool_start, pool_end) 
     logging.debug("subnet id is: {}".format(subnet_id)) 
     return subnet_id
 
@@ -174,7 +182,7 @@ def set_router_gateway(neutron_ep, token, router_id, network_id):
     logging.debug(response.text)
     logging.debug("successfully set gateway to router {}".format(router_id)) if response.ok else response.raise_for_status()  
 def add_interface_to_router(neutron_ep, token, router_id, subnet_id):
-    logging.info("Adding interface to router Network")
+    logging.debug("Adding interface to router Network")
     payload={
     "subnet_id": subnet_id
     }
@@ -223,7 +231,7 @@ def search_and_create_security_group(neutron_ep, token, security_group_name):
     return security_group_id
 
 def add_icmp_rule_to_security_group(neutron_ep, token, security_group_id):
-    logging.info("Adding icmp rules to security group")
+    logging.debug("Adding icmp rules to security group")
     payload= {"security_group_rule":{
             "direction": "ingress",
             "ethertype":"IPv4",

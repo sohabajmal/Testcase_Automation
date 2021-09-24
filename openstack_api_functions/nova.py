@@ -39,7 +39,7 @@ def parse_json_to_search_resource(data, resource_name, resource_key, resource_va
     data= data.json()
     for res in (data[resource_name]):
         if resource_value in res[resource_key]:
-            logging.warning("{} already exists".format(resource_value))
+            logging.debug("{} already exists".format(resource_value))
             return res[return_key]
             break
     else:
@@ -127,13 +127,13 @@ def search_keypair(nova_ep, token, keypair_name):
     data= response.json()
     for res in (data["keypairs"]):
         if keypair_name in res["keypair"]["name"]:
-            logging.warning("{} already exists".format(keypair_name))
+            logging.debug("{} already exists".format(keypair_name))
             return res["keypair"]["public_key"]
             break      
     else:
         logging.debug("{} does not exist".format(keypair_name))
 
-def create_keypair(nova_ep, token, keypair_name):
+def create_keypair(nova_ep, token, keypair_name, abc=None):
     logging.info("Creating Keypair {}".format(keypair_name))
     payload={
         "keypair":{
@@ -503,6 +503,11 @@ def delete_server(nova_ep, neutron_ep, token, server):
     time.sleep(5)
     delete_floating_ip(neutron_ep, token, server.get("floating_ip_id"))
 
+def delete_server_with_id(nova_ep, neutron_ep, token, server_id):
+    logging.info("deleting server")
+    response= send_delete_request("{}/v2.1/servers/{}".format(nova_ep,server.get("id")), token)
+    logging.debug(response.text)
+    time.sleep(5)
 def delete_flavor(nova_ep, token, flavor_id):
     logging.info("deleting flavor")
     response= send_delete_request("{}/v2.1/flavors/{}".format(nova_ep,flavor_id), token)

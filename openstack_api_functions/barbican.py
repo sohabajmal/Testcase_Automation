@@ -41,7 +41,7 @@ def parse_json_to_search_resource(data, resource_name, resource_key, resource_va
     data= data.json()
     for res in (data[resource_name]):
         if resource_value in res[resource_key]:
-            logging.warning("{} already exists".format(resource_value))
+            logging.debug("{} already exists".format(resource_value))
             return res[return_key]
             break
     else:

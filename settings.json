@@ -1,7 +1,6 @@
 {
     "network1_name": "testcase_network1",
     "subnet1_name": "testcase_subnet1",
-
     "subnet1_cidr": "192.169.219.0/24",
     "allowed_start1": "192.168.219.10",
     "allowed_end1": "192.168.219.200",
@@ -19,10 +18,14 @@
 
     "image_name": "testcase_image",
     
-    "flavor1": "testing_flavor",
-    "flavor2": "testing_flavor2",
+    "flavor1_name": "testing_flavor1",
+    "flavor2_name": "testing_flavor2",
+    "flavor_ram": 4096,
+    "flavor_disks": 20,
+    "flavor_vcpus":4,
+
     "server_1_name": "testcase_server1",
-    "server2_name": "testcase_server2",
+    "server_2_name": "testcase_server2",
     "network_provider_type": "vlan",
     "key_name": "testcase_ssh-key",
     "key_file": "~/testcase_ssh.pem",
