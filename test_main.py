@@ -261,8 +261,14 @@ def delete_environment(endpoints, overcloud_token, environment, settings):
     if flavor2_id is not None:
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor2_id)
 
-#Numa testcases
+'''
+OpenStack Testcases
+'''
 class TestOpenStack():
+    '''
+    Numa Testcases
+    '''
+
     @pytest.mark.numa
     @pytest.mark.functional
     def test_verify_instance_creation_with_numa_flavor(self, settings, environment, endpoints, overcloud_token):
@@ -289,7 +295,7 @@ class TestOpenStack():
         #create instance
         instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
         #Get VCPUS
-        if(nstance.get("status") == "active"):
+        if(instance.get("status") == "active"):
             vcpus= get_vcpus_count_of_instance(endpoints.get("nova"), overcloud_token, baremetal_nodes, instance)
         #delete instance
         delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
@@ -377,7 +383,7 @@ class TestOpenStack():
         flavor_id= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
         #create instance
         instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
-        if instance1.get("status") =="active": 
+        if instance.get("status") =="active": 
             #get host of instance
             host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
             #live migrate instance
@@ -647,9 +653,9 @@ class TestOpenStack():
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
         #check status of server is active or not
         if(ini_file["hugepage_size"] == "1GB"):
-            Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
-        else:
             Assert(instance.get("status") == "error", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        else:
+            Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.hugepage
     @pytest.mark.functional
