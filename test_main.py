@@ -42,6 +42,10 @@ def read_user_settings():
 #read settings from ini file
 @pytest.fixture(scope="session", name="ini_file")
 def read_ini_file(settings):
+    #encrypting of rsa key file
+    command= "ssh-keygen -f ~/.ssh/id_rsa -p -m PEM -f ~/.ssh/id_rsa -N ''"
+    os.system(command)
+    #Read settings file
     settings= read_ini_settings(settings.get("sah_ip"), settings.get("ini_file"))
     return settings
 
@@ -206,7 +210,18 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini
             image_file= open(os.path.expanduser(ini_file.get("image_file_name")), 'rb')
             upload_file_to_image(endpoints.get("image"), overcloud_token, image_file, image_id)
     ids["image_id"]= image_id
+    
+    #Temporary changing quota
+    logging.info("temporary changing quota")
+    project_id= find_admin_project_id((endpoints.get("keystone"), overcloud_token)
+    try: 
+        set_quota((endpoints.get("nova"), overcloud_token, project_id, 200, 25, 204800)
+        time.sleep(10)
+    except:
+        pass
+    
     '''
+    
     #create flavor    
     flavor_id= search_and_create_flavor(endpoints.get("nova"), overcloud_token, settings["flavor1"], 4096, 2, 150)
     if(ini_file.get("ovs_dpdk_enabled")=="true"):

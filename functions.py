@@ -299,6 +299,13 @@ def clean_all_environment(ini_file, endpoints, settings, overcloud_token):
             os.system("sudo rm "+keyfile_name)
         except OSError:
             pass
+    #Changing qouta to default settings
+    logging.info("setting default quota")
+    project_id= find_admin_project_id(endpoints.get("keystone"), overcloud_token)
+    try:
+        set_quota(endpoints.get("nova"), overcloud_token, project_id, 20, 20, 51200)
+    except:
+        pass
 
 def get_flavor_id(feature, nova_ep, token, flavor_name, settings, deployed_features, vcpus=None, ram=None, disks=None, mem_page_size="large" ):
     if vcpus is None:

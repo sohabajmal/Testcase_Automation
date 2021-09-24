@@ -1,0 +1,4 @@
+#Below packages will be installed when running this file with pip command
+pytest
+wget
+beautifultable
