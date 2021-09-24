@@ -80,7 +80,7 @@ def search_and_create_flavor(nova_ep, token, flavor_name, ram, vcpu, disks):
     return flavor_id
 def put_extra_specs_in_flavor(nova_ep, token, flavor_id,is_numa, mem_page_size="large"):
     #add extra specs to flavors
-    logging.info("Putting extra sepcs in flavor")
+    logging.info("Putting extra specs in flavor")
     if is_numa== True:
         payload= {
             "extra_specs": {

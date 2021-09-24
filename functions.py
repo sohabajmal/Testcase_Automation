@@ -7,6 +7,7 @@ import wget
 from xml.dom import minidom
 from openstack_api_functions.nova import *
 from openstack_api_functions.neutron import *
+from openstack_api_functions.keystone import *
 from beautifultable import BeautifulTable
 
 
@@ -261,7 +262,7 @@ def get_testcases_summary(testcases_detail, deployed_features):
     return table
 
 def clean_all_environment(ini_file, endpoints, settings, overcloud_token):
-    print("\ncleaning environment")
+    logging.info("\nCleaning environment")
     
     image_id=search_image(endpoints.get("nova"), overcloud_token, settings["image_name"])
     if image_id is not None:

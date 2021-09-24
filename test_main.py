@@ -51,9 +51,9 @@ def print_features_list_and_results(ini_file, endpoints, settings, overcloud_tok
             key=key.split("_")
             deployed_features.append(key[0])
             if(key[0]== "smart"):
-                print("Hardware Offloading is Enabled")
+                logging.info("Hardware Offloading is Enabled")
             else:
-                print("{} is Enabled".format(key[0].capitalize()))
+                logging.info("{} is Enabled".format(key[0].capitalize()))
     yield 
     '''
     This part of code wil execute after execution of all tests. 
@@ -61,7 +61,6 @@ def print_features_list_and_results(ini_file, endpoints, settings, overcloud_tok
     '''
     #cleaning environment at end of testcases
     clean_all_environment(ini_file, endpoints, settings, overcloud_token)
-
     #custom report
     logging.info("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
     logging.info("-------- Custom Report ------------")
@@ -169,12 +168,13 @@ def create_basic_openstack_environment(settings, endpoints, overcloud_token, ini
     if (keypair_key == None):
         keypair_private_key= create_keypair(endpoints.get("nova"), overcloud_token, settings["key_name"])
         logging.debug("ssh key created")
-        try:
-            #delete if .pem file already exists
-            logging.debug("deleting old private file")
-            os.system("sudo rm "+keyfile_name)
-        except OSError:
-            pass
+        if os.path.exists(keyfile_name)
+            try:
+                #delete if .pem file already exists
+                logging.debug("deleting old private file")
+                os.system("sudo rm "+keyfile_name)
+            except OSError:
+                pass
         logging.debug("creating key file")
         #create new .pem file
         keyfile = open(keyfile_name, "w")
@@ -246,6 +246,7 @@ def delete_environment(endpoints, overcloud_token, environment, settings):
         os.system("sudo rm "+keyfile_name)
     except OSError:
         pass
+    print("@@@@@@@@@@@@@@@@@@@@@")
     #delte servers if exist
     server1_id= search_server(endpoints.get("nova"), overcloud_token, settings["server_1_name"])
     if server1_id is not None:
@@ -253,6 +254,7 @@ def delete_environment(endpoints, overcloud_token, environment, settings):
     server2_id= search_server(endpoints.get("nova"), overcloud_token, settings["server_1_name"])
     if server2_id is not None:
         delete_server_with_id(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, server2_id)
+     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     #delte flavors if exist
     flavor1_id=(endpoints.get("nova"), overcloud_token, settings["flavor1_name"])
     if flavor1_id is not None:
@@ -432,7 +434,6 @@ class TestOpenStack():
 
     @pytest.mark.numa
     @pytest.mark.functional
-    @pytest.mark.development
     def test_verify_instances_will_have_vcpus_from_single_numa_node(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("numa")
         #create flavor
@@ -733,6 +734,7 @@ class TestOpenStack():
 
     @pytest.mark.hugepage
     @pytest.mark.functional
+    @pytest.mark.development
     def test_verify_instance_creation_when_all_hugepages_are_consumed(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("hugepage")
         instances= []
@@ -757,7 +759,7 @@ class TestOpenStack():
             delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
         #delete flavor
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
-        Assert("error" not in instances_status , "instances are not created as expected when hugaepages are not consumed", endpoints, overcloud_token, environment, settings)
+        Assert("error" not in instances_status and instances_possible>0, "instances are not created as expected when hugaepages are not consumed", endpoints, overcloud_token, environment, settings)
         Assert(instance.get("status") != "active", "instances are not created  as expected when hugaepages are consumed ", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.hugepage
@@ -788,7 +790,7 @@ class TestOpenStack():
             delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
         #delete flavor
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
-        Assert("error" not in instances_status , "instances are not created as expected when hugaepages are not consumed and all instances are paused", endpoints, overcloud_token, environment, settings)
+        Assert("error" not in instances_status and instances_possible>0 , "instances are not created as expected when hugaepages are not consumed and all instances are paused", endpoints, overcloud_token, environment, settings)
         Assert(instance.get("status") != "active", "instances are not created  as expected when hugaepages are consumed and all instances are paused", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.hugepage
@@ -819,7 +821,7 @@ class TestOpenStack():
             delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
         #delete flavor
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
-        Assert("error" not in instances_status , "instances are not created as expected when hugaepages are not consumed and all instances are suspended", endpoints, overcloud_token, environment, settings)
+        Assert("error" not in instances_status and instances_possible>0 , "instances are not created as expected when hugaepages are not consumed and all instances are suspended", endpoints, overcloud_token, environment, settings)
         Assert(instance.get("status") != "active", "instances are not created  as expected when hugaepages are consumed and all instances are suspended", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.hugepage
@@ -850,7 +852,7 @@ class TestOpenStack():
             delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
         #delete flavor
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
-        Assert("error" not in instances_status , "instances are not created as expected when hugaepages are not consumed and all instances are shutdown", endpoints, overcloud_token, environment, settings)
+        Assert("error" not in instances_status and instances_possible>0 , "instances are not created as expected when hugaepages are not consumed and all instances are shutdown", endpoints, overcloud_token, environment, settings)
         Assert(instance.get("status") != "active", "instances are not created  as expected when hugaepages are consumed and all instances are shutdown", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.hugepage
@@ -877,7 +879,7 @@ class TestOpenStack():
             delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
         #delete flavor
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
-        Assert("error" not in instances_status , "instances are not created as expected with 22GB flavor", endpoints, overcloud_token, environment, settings)
+        Assert("error" not in instances_status and instances_possible>0  , "instances are not created as expected with 22GB flavor", endpoints, overcloud_token, environment, settings)
 
 
 
