@@ -68,7 +68,6 @@ def create_services_endpoints(undercloud_ip, overcloud_ip):
     endpoints["undercloud_keystone"]= "{}:5000".format(undercloud_ip)
     endpoints["undercloud_nova"]= "{}:8774".format(undercloud_ip)
     return endpoints
-#def create_ssh_pem_file():
 def read_ini_settings(sah_ip, ini_file):
     settings_dic={}
     command= "grep -e mtu_size_global_default= -e nic_env_file= -e hpg_enable= -e hpg_size= -e numa_enable= -e ovs_dpdk_enable= -e sriov_enable= -e smart_nic= -e dvr_enable= -e barbican_enable= -e octavia_enable= -e overcloud_name= -e sanity_image_url= -e domain= -e floating_ip_network_vlan= -e floating_ip_network= -e floating_ip_network_gateway= -e floating_ip_network_start_ip= -e floating_ip_network_end_ip= {}".format(ini_file)
@@ -165,21 +164,26 @@ def ssh_into_node(host_ip, command, user_name="heat-admin"):
     finally:
         ssh_client.close()
         logging.debug("Connection from client has been closed") 
-    
-def create_report():
-    print("Hello from xml")
-    file = minidom.parse('repo.xml')
 
-def create_instance(settings, environment, nova_ep, neutron_ep, token, flavor_id, server_name, network_name, network_id, compute=None, feature=None):
+def create_instance(settings, environment, nova_ep, neutron_ep, token, flavor_id, server_name, network_name, network_id, compute=None, feature=None, subnet_id=None):
     server={}
-    server_id= search_and_create_server(nova_ep, token, server_name, environment.get("image_id"), settings["key_name"], flavor_id,  network_id, environment.get("security_group_id"), compute)
+    if feature == "sriov":
+        port_id, port_ip= create_port(neutron_ep, token, network_id, subnet_id, settings["sriov_port_name"])
+        server_id= search_and_create_sriov_server(nova_ep, token, server_name, environment.get("image_id"), settings["key_name"], flavor_id,  port_id, "r62", environment.get("security_group_id"), compute)
+        server["port_id"]=port_id
+    else:
+        server_id= search_and_create_server(nova_ep, token, server_name, environment.get("image_id"), settings["key_name"], flavor_id,  network_id, environment.get("security_group_id"), compute)
     server["id"]=server_id
     server_build_wait(nova_ep, token, [server_id])
     status= check_server_status(nova_ep, token, server_id)
     server["status"]=status
     if(status=="active"):
-        server_ip= get_server_ip(nova_ep, token, server_id, network_name)
-        server["ip"]=server_ip
+        if feature !="sriov":
+            server_ip= get_server_ip(nova_ep, token, server_id, network_name)
+            server["ip"]=server_ip
+        else:
+            server_ip= port_ip
+            server["ip"]=port_ip
         floating_ip= get_server_floating_ip(nova_ep, token, server_id, network_name)
         floating_ip_id= get_floating_ip_id(neutron_ep, token, floating_ip)
         server["floating_ip_id"]=floating_ip_id
@@ -193,6 +197,7 @@ def create_instance(settings, environment, nova_ep, neutron_ep, token, flavor_id
         server["floating_ip"]=floating_ip
         server["floating_ip_id"]=floating_ip_id 
     return server
+
 def cold_migrate_instance(nova_ep, token, instance_id, instance_floating_ip, settings):
     response=  perform_action_on_server(nova_ep,token, instance_id, "migrate")
     logging.info("Waiting for migration")
@@ -215,7 +220,7 @@ def get_node_ip(baremetal_nodes, node_name):
 def perform_action_on_instances(instances, nova_ep, token, action):
     for instance in instances:   
         perform_action_on_server(nova_ep,token, instance.get("id"), action)
-    time.sleep(20)
+    time.sleep(10)
 
 def get_testcases_summary(testcases_detail, deployed_features):
     total_testcases= len(testcases_detail)
@@ -237,15 +242,10 @@ def get_testcases_summary(testcases_detail, deployed_features):
     for feature in deployed_features:
         row=[feature.capitalize()]
         total=passed=failed=skipped=0
-        #print("*******************************")
-        #print("{} Testcases".format(feature.capitalize()))
         for testcase in testcases_detail:
             if(testcases_detail[testcase][0]==feature):
                 #print("{}: {} ".format(testcase, testcases_detail[testcase][1]))
                 if(testcases_detail[testcase][1]=="Failed"):
-                    print("-----------------------------------")
-                #    print("{}".format(testcases_detail[testcase][2]))
-                #    print("-----------------------------------")
                     failed+=1
                     total+=1
                 if(testcases_detail[testcase][1]=="Passed"):
@@ -321,12 +321,75 @@ def get_flavor_id(feature, nova_ep, token, flavor_name, settings, deployed_featu
         put_extra_specs_in_flavor(nova_ep, token, flavor_id, True)
     
     if (feature=="hugepage"):
-     put_extra_specs_in_flavor(nova_ep, token, flavor_id, False, mem_page_size)
-
+        put_extra_specs_in_flavor(nova_ep, token, flavor_id, False, mem_page_size)
+    
+    if (feature=="sriov"):
+        if("numa" in deployed_features):
+            put_extra_specs_in_flavor(nova_ep, token, flavor_id, True)
     return flavor_id
 
+def instance_ssh_test(ip, settings):
+    try:
+        remove_key= "ssh-keygen -R {}".format(ip)
+        os.system(remove_key)
+    except:
+        pass
+    retries=0
+    ssh=False
+    while(1):
+        try:
+            client= paramiko.SSHClient()
+            paramiko.AutoAddPolicy()
+            client.load_system_host_keys()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(ip, port=22, username="centos", key_filename=os.path.expanduser(settings["key_file"]))
+            ssh= True
+            break
+        except Exception as e:
+            logging.exception(e)
+            logging.debug("Waiting for server to ssh")
+            time.sleep(30)
+        retries=retries+1
+        if(retries==settings["instance_ssh_wait_retires"]):
+            break
+    return ssh
 
+def ping_test_between_instances(ip, ping_ip, settings, command=None):
+    if command is None:
+        command="ping  -c 3 {}".format(ping_ip)
+    try:
+        remove_key= "ssh-keygen -R {}".format(ip)
+        os.system(remove_key)
+    except:
+        pass
+    retries=0
+    while(1):
+        try:
+            client= paramiko.SSHClient()
+            paramiko.AutoAddPolicy()
+            client.load_system_host_keys()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(ip, port=22, username="centos", key_filename=os.path.expanduser(settings["key_file"]))
+            logging.debug("SSH Session is established")
+            logging.debug("Running command in a compute node")
+            stdin, stdout, stderr = client.exec_command(command)
+            logging.info("command {} successfully executed on instance")
+            output= stdout.read().decode('ascii')
+            error= stderr.read().decode('ascii')
+            logging.info("command {} successfully executed on instance".format(command))
 
+            if error =="" and "icmp_seq=3 Destination Host Unreachable" not in output and "ttl=" in output:
+                return True, output, error
+            else:
+                return False, output, error
+            client.close()
+        except Exception as e:
+            logging.exception(e)
+            logging.error("error ocurred when making ssh connection and running command on remote server") 
+            time.sleep(30)
+        retries=retries+1
+        if(retries==settings["instance_ssh_wait_retires"]):
+            break
 
 
 

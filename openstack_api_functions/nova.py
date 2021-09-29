@@ -241,7 +241,7 @@ def create_server(nova_ep, token, server_name, image_id, keypair_name, flavor_id
     data= response.json()
     return data["server"]["links"][0]["href"]  
 def create_sriov_server(nova_ep, token, server_name, image_id, keypair_name, flavor_id,  port_id, availability_zone ,security_group_id, host=None):
-    logging.info("Creating SRIOV Server {}".format(server_name))
+    logging.info("Creating SRIOV server {}".format(server_name))
     payload= {"server": {"name": server_name, "imageRef": image_id,
         "key_name": keypair_name, "flavorRef": flavor_id, "security_groups": [{"name": security_group_id}],
         "max_count": 1, "min_count": 1, "networks": [{"port": port_id}], 
@@ -389,7 +389,10 @@ def get_baremeta_nodes_ip(nova_ep, undercloud_token):
     servers= receive_all_server(nova_ep, undercloud_token)
     server_ip={}
     for server in servers["servers"]:
-        server_ip[server["name"]]= server["addresses"]["ctlplane"][0]["addr"]
+        try:
+            server_ip[server["name"]]= server["addresses"]["ctlplane"][0]["addr"]
+        except:
+            pass
     return server_ip
 def get_compute_host_list(nova_ep, token):
     response= send_get_request("{}/v2.1/os-hosts".format(nova_ep), token)

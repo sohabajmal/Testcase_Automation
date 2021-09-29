@@ -315,13 +315,19 @@ def get_floating_ip_id(neutron_ep, token, floating_ip):
             return ips["id"]   
 
 def delete_network(neutron_ep, token, network_id):
-    logging.info("deleting Network")
+    logging.info("deleting network")
     response= send_delete_request("{}/v2.0/networks/{}".format(neutron_ep,network_id), token)
     logging.debug(response.text)
 def delete_router(neutron_ep, token, router_id):
     logging.info("deleting router")
     response= send_delete_request("{}/v2.0/routers/{}".format(neutron_ep,router_id), token)
     logging.debug(response.text)
+def delete_port(neutron_ep, token, port_id):
+    logging.info("deleting port")
+    response= send_delete_request("{}/v2.0/ports/{}".format(neutron_ep,port_id), token)
+    logging.debug(response.text)
+
+
 
 
 

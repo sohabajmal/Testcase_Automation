@@ -1,4 +1,5 @@
 
+import pytest
 class TestOpenShift:
     def test_osp1(self):
         print("OSP Test1")

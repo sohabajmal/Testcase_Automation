@@ -15,7 +15,7 @@
     "router_name":"testcase_router",
     "external_network_name": "public",
     "external_subnet": "external_sub",
-
+    "sriov_port_name":"sriov_port",
     "image_name": "testcase_image",
     
     "flavor1_name": "testing_flavor1",
@@ -31,6 +31,7 @@
     "key_file": "~/testcase_ssh.pem",
     
     "instance_boot_wait_retires":2,
+    "instance_ssh_wait_retires":2,
  
     "sah_ip": "100.67.62.8",
     "ini_file": "/root/R62_16.1.ini"
