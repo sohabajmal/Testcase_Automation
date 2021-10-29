@@ -1,5 +1,5 @@
 from openstack_api_functions.nova import *
-from functions import *
+from common_utils import *
 import logging
 import math
 import subprocess
@@ -18,6 +18,7 @@ def parse_hugepage_size(huge_page_info, parameter):
         line= property.split()
         if line[0] == parameter:
            return line[1]
+           
 def get_available_ram_of_node(compute_ip):        
     ssh_output= ssh_into_node(compute_ip, "grep MemTotal: /proc/meminfo")
     ssh_output=ssh_output[0]

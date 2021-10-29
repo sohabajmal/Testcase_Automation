@@ -33,9 +33,6 @@ def send_delete_request(api_url, token, header='application/json' ):
     except Exception as e:
        logging.error( "request processing failure ", stack_info=True)
        logging.exception(e)
-def delete_resource(api_url, token):
-    send_delete_request(api_url, token)
-
 
 def parse_json_to_search_resource(data, resource_name, resource_key, resource_value, return_key):
     data= data.json()
@@ -161,10 +158,10 @@ def check_pool_status(loadbal_ep, token, listener_id):
     logging.debug(response.text)
     data= response.json()
     return data["pool"]["provisioning_status"] if response.ok else response.raise_for_status()
-def search_and_create_pool(loadbal_ep, token, pool_name, listener_id, loadbalancerid, protocol, algorithm):
+def search_and_create_pool(loadbal_ep, token, pool_name, listener_id, loadbalancerid, protocol, algorithm, session=None):
     pool_id= search_pool(loadbal_ep, token, pool_name)    
     if pool_id is None:
-        pool_id =create_pool(loadbal_ep, token,  pool_name, listener_id, loadbalancerid, protocol, algorithm)  
+        pool_id =create_pool(loadbal_ep, token,  pool_name, listener_id, loadbalancerid, protocol, algorithm, session)  
     logging.debug("listener id is: {}".format(listener_id))
     return pool_id
 def add_instance_to_pool(loadbal_ep, token, pool_id, ip, subnet_id, protocol_port ):
@@ -176,9 +173,11 @@ def add_instance_to_pool(loadbal_ep, token, pool_id, ip, subnet_id, protocol_por
             }
         }
     response= send_post_request("{}/v2.0/lbaas/pools/{}/members".format(loadbal_ep, pool_id), token, payload)
+    #wait for member to become up
+    time.sleep(10)
     logging.info("successfully added instance to pool") if response.ok else response.raise_for_status()
 
-def health_monitor_pool(loadbal_ep, token, pool_id, type):
+def create_health_monitor_pool(loadbal_ep, token, pool_id, type):
     payload= {
         "healthmonitor": {
             "pool_id": pool_id,
@@ -228,7 +227,7 @@ def down_pool_member(loadbal_ep, token, pool_id, member_id ):
             }
         }
     response= send_put_request("{}/v2.0/lbaas/pools/{}/members/{}".format(loadbal_ep, pool_id, member_id), token, payload)
-    time.sleep(5)
+    time.sleep(10)
     logging.debug(response.text)
     logging.info("successfully down a member in pool") if response.ok else response.raise_for_status()
 def up_pool_member(loadbal_ep, token, pool_id, member_id ):
@@ -242,7 +241,7 @@ def up_pool_member(loadbal_ep, token, pool_id, member_id ):
     logging.debug(response.text)
     time.sleep(5)
     logging.info("successfully up a member in pool") if response.ok else response.raise_for_status()
-def disable_loadbalancer(loadbal_ep, token, loadbalancer_id ):
+def disable_loadbalancer(loadbal_ep, token, loadbalancer_id):
     payload= {
         "loadbalancer": {
            "admin_state_up": 'false'
@@ -252,7 +251,7 @@ def disable_loadbalancer(loadbal_ep, token, loadbalancer_id ):
     time.sleep(30)
     logging.debug(response.text)
     logging.info("successfully disabled loadbalancer") if response.ok else response.raise_for_status()
-def enable_loadbalancer(loadbal_ep, token, loadbalancer_id ):
+def enable_loadbalancer(loadbal_ep, token, loadbalancer_id):
     payload= {
         "loadbalancer": {
            "admin_state_up": 'true'
@@ -268,11 +267,11 @@ def check_loadbalancer_operating_status(loadbal_ep, token, loadbalancer_id):
     data= response.json()
     return data["loadbalancer"]["operating_status"] if response.ok else response.raise_for_status()
 
-def create_l7policy(loadbal_ep, token, policy_name, listener_id):
+def create_l7policy(loadbal_ep, token, listener_id):
     #create loadbalancer
     payload= {
         "l7policy": {
-            "name": policy_name,
+            "name": "test_policy",
             "listener_id": listener_id,
             "action": "REDIRECT_TO_URL", 
             "redirect_url": "https://www.example.com/",
@@ -281,9 +280,12 @@ def create_l7policy(loadbal_ep, token, policy_name, listener_id):
         }
     response= send_post_request('{}/v2.0/lbaas/l7policies'.format(loadbal_ep), token, payload)
     logging.debug(response.text)
-    logging.info("successfully created l7policy {}".format(policy_name)) if response.ok else response.raise_for_status()
+    logging.info("successfully created l7policy") if response.ok else response.raise_for_status()
+    data= response.json()
+    time.sleep(30)
+    return data["l7policy"]["id"] if response.ok else response.raise_for_status()
 
-def create_l7policy(loadbal_cdep, token, policy_id):
+def create_l7policy_rule(loadbal_ep, token, policy_id):
     #create loadbalancer
     payload= {
         "rule": {
@@ -296,3 +298,24 @@ def create_l7policy(loadbal_cdep, token, policy_id):
     response= send_post_request('{}/v2.0/lbaas/l7policies/{}/rules'.format(loadbal_ep, policy_id), token, payload)
     logging.debug(response.text)
     logging.info("successfully added rule to policy {}".format(policy_id)) if response.ok else response.raise_for_status()
+    data= response.json()
+    time.sleep(30)
+    return data["rule"]["id"] if response.ok else response.raise_for_status()
+
+def delete_loadbalancer(loadbalancer_ep, loadbalancer_id, token):
+    """delete loadbalancer."""
+    logging.info("deleting loadbalancer")
+    response=send_delete_request("{}/v2.0/lbaas/loadbalancers/{}".format(loadbalancer_ep, loadbalancer_id), token)
+    time.sleep(10)
+
+def delete_loadbalancer_pool(loadbalancer_ep, pool_id, token):
+    """delete loadbalancer pool."""
+    logging.info("deleting pool")
+    response=send_delete_request("{}/v2.0/lbaas/pools/{}".format(loadbalancer_ep, pool_id), token)
+    time.sleep(10)
+
+def delete_loadbalancer_listener(loadbalancer_ep, listener_id, token):
+    """delete loadbalancer listener."""
+    logging.info("deleting listener")
+    response=send_delete_request("{}/v2.0/lbaas/listeners/{}".format(loadbalancer_ep, listener_id), token)
+    time.sleep(10)
