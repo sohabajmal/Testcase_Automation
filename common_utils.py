@@ -175,6 +175,7 @@ def ssh_into_node(host_ip, command, user_name="heat-admin"):
         #decode output
         output= stdout.read().decode('ascii')
         error= stderr.read().decode('ascii')
+        
         return output, error
     except Exception as e:
         logging.exception(e)
@@ -190,7 +191,7 @@ def create_instance(settings, environment, nova_ep, neutron_ep, token, flavor_id
             port_id, port_ip= create_port(neutron_ep, token, network_id, subnet_id, settings["sriov_port_name"], "vflag")
         else:
             port_id, port_ip= create_port(neutron_ep, token, network_id, subnet_id, settings["sriov_port_name"])
-        server_id= search_and_create_sriov_server(nova_ep, token, server_name, environment.get("image_id"), settings["key_name"], flavor_id,  port_id, "r62", environment.get("security_group_id"), compute)
+        server_id= search_and_create_sriov_server(nova_ep, token, server_name, environment.get("image_id"), settings["key_name"], flavor_id,  port_id, environment.get("security_group_id"), compute)
         server["port_id"]=port_id
     else:
         server_id= search_and_create_server(nova_ep, token, server_name, environment.get("image_id"), settings["key_name"], flavor_id,  network_id, environment.get("security_group_id"), compute)
@@ -232,7 +233,8 @@ def cold_migrate_instance(nova_ep, token, instance_id, instance_floating_ip, set
 
 def get_compute_name(baremetal_nodes, compute, domain):
     compute= [key for key, val in baremetal_nodes.items() if compute in key]
-    compute= "{}.{}".format(compute[0],domain)
+    compute= "{}.localdomain".format(compute[0])
+    #compute= "{}.{}".format(compute[0],domain)
     return compute
 def get_node_ip(baremetal_nodes, node_name):
     ip= [val for key, val in baremetal_nodes.items() if node_name in key]

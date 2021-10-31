@@ -199,3 +199,6 @@ def delete_volume(cinder_ep, token, project_id, volume_id):
     logging.info("deleting volume")
     response= send_delete_request("{}/v3/{}/volumes/{}".format(cinder_ep,project_id,volume_id), token)
 
+def delete_snapshot(cinder_ep, token, project_id, snapshot_id):
+    logging.info("deleting volume")
+    response= send_delete_request("{}/v3/{}/snapshots/{}".format(cinder_ep,project_id,snapshot_id), token)

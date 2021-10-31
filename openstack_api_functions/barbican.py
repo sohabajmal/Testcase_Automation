@@ -152,3 +152,6 @@ def get_payload(barbican_ep, token, secret_id):
 def delete_secret(barbican_ep, secret_id, token):
     """delete barbican secret"""
     delete_resource("{}/v1/secrets/{}".format(barbican_ep, secret_id), token)
+
+def delete_resource(api_url, token):
+    send_delete_request(api_url, token)

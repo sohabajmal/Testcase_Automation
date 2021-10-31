@@ -284,7 +284,17 @@ class TestOpenStack():
     '''
     Numa Testcases
     '''
-    @pytest.mark.demo1
+    @pytest.mark.numa
+    @pytest.mark.functional
+    def test_verify_numa_flavor_creation(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("numa")
+        #create flavor
+        flavor_id= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #check status of server is active or not
+        Assert(flavor_id is not None, "flavor is not successfully created", endpoints, overcloud_token, environment, settings)
+
     @pytest.mark.numa
     @pytest.mark.functional
     def test_verify_instance_creation_with_numa_flavor(self, settings, environment, endpoints, overcloud_token):
@@ -300,7 +310,6 @@ class TestOpenStack():
         #check status of server is active or not
         Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
 
-    @pytest.mark.demo1
     @pytest.mark.numa
     @pytest.mark.functional
     def test_number_of_vcpus_pinned_are_same_as_the_vcpus_in_numa_flavour(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
@@ -321,26 +330,35 @@ class TestOpenStack():
         #Get VCPUS of instance 
         Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
         Assert(vcpus == "4", "instance do not have correct number of pinned vcpus", endpoints, overcloud_token, environment, settings)
-
+    
     @pytest.mark.numa
     @pytest.mark.functional
-    def test_verify_numa_instance_resizing(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("error")
+    def test_verify_numa_instance_resizing(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("numa")
         #create flavor
         flavor_id= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features, 4)
-
         #create flavor to resize
-        flavor_id= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features, 2)
+        upscale_flavor= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor2_name"], settings, deployed_features, 8)
         #create instance
         instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        vcpus_before= get_vcpus_count_of_instance(endpoints.get("nova"), overcloud_token, baremetal_nodes, instance)
         #resize server
-        resize_status= resize_server(endpoints.get("nova"),overcloud_token, instance.get("id"), flavor_to_resize)
+        resize_status= resize_server(endpoints.get("nova"),overcloud_token, instance.get("id"), upscale_flavor)        
+        time.sleep(30)
+        #verisfy resizinf
+        perform_action_on_server(endpoints.get("nova"), overcloud_token, instance.get("id"), "confirmResize")
+        vcpus_after= get_vcpus_count_of_instance(endpoints.get("nova"), overcloud_token, baremetal_nodes, instance)
         #delete instance
         delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
         #delete flavor
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
-        print(resize_status)
-    
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, upscale_flavor)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        # verify instance resizing
+        Assert(vcpus_before !=vcpus_after , "instance is not resized", endpoints, overcloud_token, environment, settings)
+
     @pytest.mark.numa
     @pytest.mark.functional
     def test_verify_numa_instance_ping(self, settings, environment, endpoints, overcloud_token):
@@ -477,6 +495,38 @@ class TestOpenStack():
     @pytest.mark.numa
     @pytest.mark.functional
     def test_verify_instance_creation_when_all_vcpus_are_consumed(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("")
+        instances= []
+        instances_status=[]
+        #get compute nodes name
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute0_ip=get_node_ip(baremetal_nodes, "compute-0")
+        #get possible instances on compute node
+        instances_possible= get_possible_numa_instances(compute0_ip, 20)
+        print("Instances Possible")
+        print(instances_possible)
+        #create flavor
+        flavor_id= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features, 20)
+
+        #create Instances
+        for i in range (0, instances_possible):
+            instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, "test_server{}".format(i), settings["network1_name"], environment.get("network1_id"), compute0, "Yes")
+            instances_status.append(instance.get("status"))
+            instances.append(instance)
+        #create extra instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "Yes")
+        instances.append(instance)
+        #delete instance
+        for instance in instances:
+            delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        Assert("error" not in instances_status[:-1] , "instances are not created as expected when vcpu are not consumed", endpoints, overcloud_token, environment, settings)
+        Assert(instance.get("status") != "active", "instances are not created as expected when vcpu are consumed ", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.numa
+    @pytest.mark.functional
+    def test_verify_instance_creation_with_20_vcpu_numa_flavor(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("numa")
         instances= []
         instances_status=[]
@@ -553,7 +603,7 @@ class TestOpenStack():
         flavor_id= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features, 20)
 
         #create Instances    
-        for i in range (0, instances_possible-1):
+        for i in range (0, instances_possible):
             instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, "test_server{}".format(i), settings["network1_name"], environment.get("network1_id"), compute0, "Yes")
             instances_status.append(instance.get("status"))
             instances.append(instance)
@@ -584,7 +634,7 @@ class TestOpenStack():
         #create flavor
         flavor_id= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features, 20)
         #create Instances    
-        for i in range (0, instances_possible-1):
+        for i in range (0, instances_possible):
             instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, "test_server{}".format(i), settings["network1_name"], environment.get("network1_id"), compute0, "Yes")
             instances_status.append(instance.get("status"))
             instances.append(instance)
@@ -756,6 +806,17 @@ class TestOpenStack():
     '''
     @pytest.mark.hugepage
     @pytest.mark.functional
+    def test_verify_hugepage_flavor_creation(self, settings, baremetal_nodes, ini_file, endpoints, overcloud_token, environment):
+        skip_test_if_feature_not_enabled("hugepage")
+        #create flavor
+        flavor_id= get_flavor_id("hugepage", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #check status of server is active or not
+        Assert(flavor_id is not None, "flavor is not successfully created", endpoints, overcloud_token, environment, settings)
+    
+    @pytest.mark.hugepage
+    @pytest.mark.functional
     def test_validate_hugepage_deplyment_with_size_set_to_1_GB_or_2_MB(self, settings, baremetal_nodes, ini_file, endpoints, overcloud_token, environment):
         skip_test_if_feature_not_enabled("hugepage")
         hugepages=[]
@@ -790,6 +851,7 @@ class TestOpenStack():
 
     @pytest.mark.hugepage
     @pytest.mark.functional
+    @pytest.mark.demo
     def test_verify_instance_creation_with_hugepage_1GB_flavor_and_1GB_deployment(self, settings, environment, endpoints, overcloud_token, ini_file):
         skip_test_if_feature_not_enabled("hugepage")
         #create flavor
@@ -802,7 +864,7 @@ class TestOpenStack():
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
         #check status of server is active or not
         if(ini_file["hugepage_size"] == "1GB"):
-            Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+            Assert(instance.get("status") == "active", "instance state should be failed", endpoints, overcloud_token, environment, settings)
         else:
             Assert(instance.get("status") == "error", "instance state is not active", endpoints, overcloud_token, environment, settings)
     
@@ -820,7 +882,7 @@ class TestOpenStack():
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
         #check status of server is active or not
         if(ini_file["hugepage_size"] == "1GB"):
-            Assert(instance.get("status") == "error", "instance state is not active", endpoints, overcloud_token, environment, settings)
+            Assert(instance.get("status") == "error", "instance state should be failed", endpoints, overcloud_token, environment, settings)
         else:
             Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
 
@@ -841,6 +903,58 @@ class TestOpenStack():
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
         Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
         Assert(ping_response == 0, "instance ping failed", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.hugepage
+    @pytest.mark.functional
+    def test_verify_hugepage_instance_consumed_coorrect_number_of_hugepages(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("hugepage")
+        #create flavor
+        flavor_id= get_flavor_id("hugepage", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        
+        if(instance.get("status") == "active"):
+            hugepage_size= get_hugepages_consumed_by_instance(endpoints.get("nova"), overcloud_token, baremetal_nodes, instance)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #validate instance status
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        #validate hugepage size
+        if(ini_file["hugepage_size"]== "1GB"):
+            Assert(hugepage_size == "1048576", "instance have not consumed valid number of hugepages", endpoints, overcloud_token, environment, settings)
+        else:
+            Assert(gepage_size == "2048", "instance have not consumed valid number of hugepages", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.hugepage
+    @pytest.mark.functional
+    def test_verify_hugepage_instance_resizing(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("hugepage")
+
+        #create flavor
+        flavor_id= get_flavor_id("hugepage", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features, 4)
+        #create flavor to resize
+        upscale_flavor= get_flavor_id("hugepage", endpoints.get("nova"), overcloud_token, settings["flavor2_name"], settings, deployed_features, 8)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        vcpus_before= get_vcpus_count_of_instance(endpoints.get("nova"), overcloud_token, baremetal_nodes, instance)
+        #resize server
+        resize_status= resize_server(endpoints.get("nova"),overcloud_token, instance.get("id"), upscale_flavor)        
+        time.sleep(30)
+        #verisfy resizinf
+        perform_action_on_server(endpoints.get("nova"), overcloud_token, instance.get("id"), "confirmResize")
+        vcpus_after= get_vcpus_count_of_instance(endpoints.get("nova"), overcloud_token, baremetal_nodes, instance)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, upscale_flavor)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        # verify instance resizing
+        Assert(vcpus_before !=vcpus_after , "instance is not resized", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.hugepage    
     @pytest.mark.functional
@@ -1201,11 +1315,26 @@ class TestOpenStack():
     '''
     @pytest.mark.sriov
     @pytest.mark.functional
-    def test_verify_vfs_are_created_and_in_up_state(self, settings, environment, endpoints, overcloud_token):
+    def test_verify_sriov_vfs_are_created_and_in_up_state(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
         skip_test_if_feature_not_enabled("sriov")
-        sriov_interfaces= get_sriov_enabled_interfaces()
-        print(sriov_interfaces)
+        #get ip of compute nodes
+        nodes_ips= get_node_ip(baremetal_nodes, "compute")
+        #check status of interfaces
+        sriov_interfaces_status= get_sriov_enabled_interfaces(nodes_ips)
+        #Validate interfaces
+        Assert(sriov_interfaces_status == True, "SRIOV interface/s are not up", endpoints, overcloud_token, environment, settings)
     
+    @pytest.mark.sriov
+    @pytest.mark.functional
+    def test_verify_the_mode_for_sriov_pci_device(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
+        skip_test_if_feature_not_enabled("sriov")
+        #get ip of compute nodes
+        nodes_ips= get_node_ip(baremetal_nodes, "compute")
+        #get swtch dev mode
+        pci_device_mode= get_mode_of_sriov_pci_devices(nodes_ips)
+        #Validate switch mode
+        Assert(pci_device_mode == True, "switch mode is not legacy", endpoints, overcloud_token, environment, settings)
+
     @pytest.mark.sriov
     @pytest.mark.functional
     def test_verify_sriov_instance_creation(self, settings, environment, endpoints, overcloud_token):
@@ -1265,7 +1394,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1297,7 +1426,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"), compute1, "No", "sriov", environment.get("subnet1_id"))
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1328,7 +1457,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"), compute0, "No", "sriov", environment.get("subnet2_id"))
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1360,7 +1489,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"), compute1, "No", "sriov", environment.get("subnet2_id"))
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1391,7 +1520,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"),compute0)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1423,7 +1552,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"),compute1)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1454,7 +1583,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"),compute0)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1486,7 +1615,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"),compute1)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1561,10 +1690,199 @@ class TestOpenStack():
         Assert(response ==202, "live migration failed", endpoints, overcloud_token, environment, settings)
         Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
         Assert(ping_response==0, "instance ping failed after live migration", endpoints, overcloud_token, environment, settings)
-    
+
+    @pytest.mark.sriov
+    @pytest.mark.functional
+    def test_reboot_the_sriov_instance_and_check_the_vf_connectivity(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("sriov")
+        #create flavor
+        flavor_id= get_flavor_id("sriov", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "No", "sriov", environment.get("subnet1_id"))
+        #ping test instance
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+            #reboot instance
+            print("rebooting")
+            reboot_server(endpoints.get("nova"), overcloud_token, instance.get("id"))
+            server_build_wait(endpoints.get("nova"), overcloud_token, [instance.get("id")])
+            ping_test= ping_test_between_instances(instance.get("floating_ip"), "8.8.8.8", settings)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token, instance.get("port_id"))
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response == 0, "instance ping failed", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test[0] == True, "instance failed to ping 8.8.8.8", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.sriov
+    @pytest.mark.volume
+    def test_verify_attach_volume_to_sriov_instance_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("sriov")
+        #create flavor
+        flavor_id= get_flavor_id("sriov", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "No", "sriov", environment.get("subnet1_id"))
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token, instance.get("port_id"))
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume not attached to server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.sriov
+    @pytest.mark.volume
+    def test_verify_detach_volume_from_sriov_instance_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("sriov")
+        #create flavor
+        flavor_id= get_flavor_id("sriov", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "No", "sriov", environment.get("subnet1_id"))
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #detach volume
+        if volume_status_after_attachment =="in-use":
+            detach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_deattachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token, instance.get("port_id"))
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_deattachment == "available", "volume is not detached from server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.sriov
+    @pytest.mark.volume
+    def test_verify_migration_of_sriov_instance_instance_with_attached_volume(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("sriov")
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute1= get_compute_name(baremetal_nodes, "compute-1", ini_file.get("domain"))
+        #create flavor
+        flavor_id= get_flavor_id("sriov", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "sriov", environment.get("subnet1_id"))
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #migrate instance
+        #get host of instance
+        host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #live migrate instance
+        response= live_migrate_server(endpoints.get("nova"), overcloud_token, instance.get("id"), compute1)
+        #get host of instance
+        new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token, instance.get("port_id"))
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(response ==202, "live migration failed", endpoints, overcloud_token, environment, settings)
+        Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response==0, "instance ping failed after live migration", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.sriov
+    @pytest.mark.volume
+    def test_verify_create_snapshot_from_sriov_instance_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("sriov")
+        #create flavor
+        flavor_id= get_flavor_id("sriov", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "No", "sriov", environment.get("subnet1_id"))
+        #create snapshot
+        instance_snapshot_id=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token, instance.get("port_id"))
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.sriov
+    @pytest.mark.volume
+    def test_verify_create_sriov_instance_instance_from_snapshot(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("sriov")
+        #create flavor
+        flavor_id= get_flavor_id("sriov", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "No", "sriov", environment.get("subnet1_id"))
+        #create snapshot
+        instance_snapshot_id=instance2=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        if instance_snapshot_id != None:
+            port2_id, port2_ip= create_port(endpoints.get("neutron"), overcloud_token, environment.get("network1_id"), environment.get("subnet1_id"), settings["sriov_port_name"], "vflag")
+            instance2= search_and_create_sriov_server(endpoints.get("nova"), overcloud_token, settings["server_2_name"], instance_snapshot_id, settings["key_name"], flavor_id, port2_id, environment.get("security_group_id"))
+            server_build_wait(endpoints.get("nova"), overcloud_token, [instance2])
+            instance2_status= check_server_status(endpoints.get("nova"), overcloud_token, instance2)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        delete_server_with_id(endpoints.get("nova"), overcloud_token, instance2)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token, instance.get("port_id"))
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token,port2_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+        Assert(instance2_status == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+  
     '''
     Barbican Testcases 
     '''
+    @pytest.mark.demo
     @pytest.mark.barbican
     @pytest.mark.negative
     def test_create_barbican_secret(self, endpoints, overcloud_token, environment, settings):
@@ -1575,6 +1893,7 @@ class TestOpenStack():
     
     @pytest.mark.barbican
     @pytest.mark.functional
+    @pytest.mark.demo
     def test_search_barbican_secret(self, endpoints, overcloud_token, environment, settings):
         skip_test_if_feature_not_enabled("barbican")
         secret_id= create_barbican_secret(endpoints.get("barbican"), overcloud_token)
@@ -1700,7 +2019,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"), compute1)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1873,6 +2192,14 @@ class TestOpenStack():
     '''
     @pytest.mark.dpdk
     @pytest.mark.functional
+    def test_verify_ovs_dpdk_is_deployed_on_all_compute_nodes_after_script_execution(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dpdk")
+        nodes_ips= get_node_ip(baremetal_nodes, "compute")
+        dpdk_service_status= verify_status_of_ovs_dpdk_service(nodes_ips)
+        Assert(dpdk_service_status == True, "OVS-DPDK service is not active on all computes", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.functional
     def test_verify_ports_are_assigned_correctly_to_ovs_dpdk_in_mode_I_and_II(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("dpdk")
         nodes_ips= get_node_ip(baremetal_nodes, "compute")
@@ -1888,7 +2215,7 @@ class TestOpenStack():
         Assert(active_ports == True, "DPDK dports are not active", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.dpdk
-    @pytest.mark.functional
+    @pytest.mark.functional 
     def test_verify_neutron_service_is_working_fine_with_ovs_dpdk(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("dpdk")
         command= "timeout 2 systemctl status tripleo_neutron_ovs_agent.service"
@@ -1911,7 +2238,6 @@ class TestOpenStack():
         bridges_status= verify_ovs_dpdk_bridges(nodes_ips)
         Assert(bridges_status == True, "OVS service is not working properly", endpoints, overcloud_token, environment, settings)
 
-
     @pytest.mark.dpdk
     @pytest.mark.functional
     def test_verify_dpdk_instance_ceation(self, settings, environment, endpoints, overcloud_token):
@@ -1932,6 +2258,59 @@ class TestOpenStack():
 
     @pytest.mark.dpdk
     @pytest.mark.functional
+    @pytest.mark.development
+    def test_verify_the_ovs_dpdk_works_fine_with_floating_ip(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dpdk")
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        #Ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+            ping_test= ping_test_between_instances(instance.get("floating_ip"), "8.8.8.8", settings)
+
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response == 0, "instance ping failed", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test[0] == True, "floating ip is working fine", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.functional
+    def test_verify_the_communication_of_two_ovs_dpdk_instance_in_same_compute_node_with_only_one_instance_having_floating_ip(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dpdk")
+        #Get compute nodes
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        #ping test instance
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
+            ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
+            ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
+        if ping_response1==0 and ping_response2==0:
+            ping_test1= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("floating_ip"), settings)
+            ping_test2= ping_test_between_instances(instance2.get("floating_ip"), instance1.get("floating_ip"), settings)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance1)
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance2)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token, instance1.get("port_id"))
+        delete_port(endpoints.get("neutron"), overcloud_token, instance2.get("port_id"))
+        #check status of server is active or not
+        Assert((instance1.get("status") or instance2.get("status"))   == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response1 == 0 and ping_response2==0, "instance ping failed", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test1[0] == True and ping_test2[0]==True, "communication between instances failed", endpoints, overcloud_token, environment, settings)
+    
+    @pytest.mark.dpdk
+    @pytest.mark.functional
     def test_verify_communication_of_two_dpdk_instance_on_same_compute_and_same_network(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("dpdk")
         #Get compute nodes
@@ -1942,7 +2321,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -1974,7 +2353,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"), compute1)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2109,7 +2488,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2143,7 +2522,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"), compute1)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2176,7 +2555,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"), compute0)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2210,7 +2589,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"), compute1)
         #ping test instance
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2442,7 +2821,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "vflag", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"),compute0)
         #ping test
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2474,7 +2853,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "vflag", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"),compute1)
         ##ping test
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2505,7 +2884,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "vflag", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"),compute0)
         #ping test
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2536,7 +2915,7 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "vflag", environment.get("subnet1_id"))
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"),compute1)
         #ping test
-        if((instance1.get("floating_ip") or instance1.get("floating_ip")) is not None):
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
             ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
         if ping_response1==0 and ping_response2==0:
@@ -2619,7 +2998,7 @@ class TestOpenStack():
 
     @pytest.mark.offloading
     @pytest.mark.functional
-    def test_reboot_the_instance_and_check_the_vf_connectivity(self, settings, environment, endpoints, overcloud_token):
+    def test_reboot_the_ovs_offload_instance_and_check_the_vf_connectivity(self, settings, environment, endpoints, overcloud_token):
         skip_test_if_feature_not_enabled("offloading")
         #create flavor
         flavor_id= get_flavor_id("offloading", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
@@ -2632,7 +3011,7 @@ class TestOpenStack():
             print("rebooting")
             reboot_server(endpoints.get("nova"), overcloud_token, instance.get("id"))
             server_build_wait(endpoints.get("nova"), overcloud_token, [instance.get("id")])
-            ping_test1= ping_test_between_instances(instance.get("floating_ip"), "8.8.8.8", settings)
+            ping_test= ping_test_between_instances(instance.get("floating_ip"), "8.8.8.8", settings)
         #delete instance
         delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
         #delete port
@@ -2642,7 +3021,7 @@ class TestOpenStack():
         #check status of server is active or not
         Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
         Assert(ping_response == 0, "instance ping failed", endpoints, overcloud_token, environment, settings)
-        Assert(ping_test1[0] == True, "instance failed to ping 8.8.8.8", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test[0] == True, "instance failed to ping 8.8.8.8", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.offloading
     @pytest.mark.volume
@@ -3408,9 +3787,8 @@ class TestOpenStack():
         #verify number of memebrs recived traffic
         Assert(len(output)>0 , "Traffic flow does not happen when algorithm is source ip", endpoints, overcloud_token, environment, settings)
        
-    @pytest.mark.error
+    @pytest.mark.octavia
     @pytest.mark.functional
-    @pytest.mark.development
     def test_create_pool_with_the_session_persistence_algorithm_and_verify_the_http_request_flow(self, endpoints, overcloud_token, environment, settings):
         skip_test_if_feature_not_enabled("octavia") 
 
@@ -3429,24 +3807,16 @@ class TestOpenStack():
             #add members to pool
             add_members_to_pool(endpoints.get("loadbalancer"), overcloud_token, loadbalancer.get("pool_id"), environment.get("subnet1_id"), 80, "HTTPS", [instance1, instance2, instance3])
             #Send traffic
-            curl_command= "curl {}".format(loadbalancer.get("floating_ip"))
-            output=[]
-            for i in range(0, 6):    
-                result= os.popen(curl_command).read()
-                #parse result
-                result= result.strip()
-                output.append(result)  
-            print("@@@@@@@")
-            print(output)
-        #delete loadbalancer
+            round_robin= roundrobin_traffic_test(loadbalancer.get("floating_ip"), "HTTPS")
+
+        #delete pool
         delete_loadbalancer_pool(endpoints.get("loadbalancer"), loadbalancer.get("pool_id"), overcloud_token)
-        #delete loadbalancer
+        #delete listener
         delete_loadbalancer_listener(endpoints.get("loadbalancer"), loadbalancer.get("listener_id"), overcloud_token)
         #delete loadbalancer
         delete_loadbalancer(endpoints.get("loadbalancer"), loadbalancer.get("lb_id"), overcloud_token)
         #delete floating_ip
-        delete_floating_ip(endpoints.get("neutron"), overcloud_token, loadbalancer.get("floating_ip_id"))
-        '''    
+        delete_floating_ip(endpoints.get("neutron"), overcloud_token, loadbalancer.get("floating_ip_id"))    
         if (loadbalancer.get("pool_status")== "ACTIVE"):
         #delete instance
             delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance1)
@@ -3454,15 +3824,15 @@ class TestOpenStack():
             delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance3)
             #delete flavor
             delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id) 
-        '''
+
         #verify state of loadbalancer
         Assert(loadbalancer.get("lb_status") =="ACTIVE", "loadbalancer creation failed", endpoints, overcloud_token, environment, settings)
         #verify state of listener
         Assert(loadbalancer.get("listener_status") =="ACTIVE", "listener creation failed", endpoints, overcloud_token, environment, settings)
         #verify state of pool
         Assert(loadbalancer.get("pool_status") =="ACTIVE", "listener creation failed", endpoints, overcloud_token, environment, settings)
-        #verify number of memebrs recived traffic
-        Assert(len(output)>0 , "Traffic flow does not happen when algorithm is source ip", endpoints, overcloud_token, environment, settings)
+        #verify traffic is in round robin format
+        Assert(round_robin ==True, "new member has not received traffic", endpoints, overcloud_token, environment, settings)
     
     
     '''
@@ -3471,18 +3841,19 @@ class TestOpenStack():
     @pytest.mark.powerflex
     @pytest.mark.storage
     def test_verify_powerflex_volume_type(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("powerflex")
+        skip_test_if_feature_not_enabled("sriov")
         #get powerflex volume type
         volume_type= get_volume_type_list(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), "powerflex_backend")
+        print(volume_type)
         #validate volume type
-        Assert(volume_status_after_deattachment == "available", "volume is not detached from server", endpoints, overcloud_token, environment, settings)
+        Assert(volume_type != None, "powerflex backend not found", endpoints, overcloud_token, environment, settings)
     
     @pytest.mark.powerflex
     @pytest.mark.storage
     def test_verify_powerflex_volume_creation(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("powerflex")
+        skip_test_if_feature_not_enabled("sriov")
         #get powerflex volume type
-        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
         #volume status
         volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
         #delete volume
@@ -3493,24 +3864,24 @@ class TestOpenStack():
     @pytest.mark.powerflex
     @pytest.mark.storage
     def test_verify_creation_of_snapshot_from_powerflex_volume(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("powerflex")
+        skip_test_if_feature_not_enabled("sriov")
         #get powerflex volume type
         volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
         #volume status
         volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id) 
         #create snapshot of volume
         snapshot_id= create_volume_snapshot(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id, settings.get("snapshot1_name"))
+        #delete snapshot
+        delete_snapshot(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), snapshot_id)
         #delete volume
         delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
-        #delete snapshot
-        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), snapshot_id)
         #validate snapshot creation
         Assert(snapshot_id is not None, "snapshot not created successfully", endpoints, overcloud_token, environment, settings)
     
     @pytest.mark.powerflex
     @pytest.mark.storage
     def test_verify_creation_of_powerflex_volume_from_snapshot(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("powerflex")
+        skip_test_if_feature_not_enabled("sriov")
         #get powerflex volume type
         volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
         #volume status
@@ -3518,17 +3889,17 @@ class TestOpenStack():
         #create snapshot of volume
         snapshot_id= create_volume_snapshot(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id, settings.get("snapshot1_name"))
         #create volume from snapshot
-        snapshot_volume= create_volume_from_snapshot(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume2_name"), volume_id)
+        snapshot_volume= create_volume_from_snapshot(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume2_name"), snapshot_id)
         
-        #delete volume
-        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete volume created from snapshot
         delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), snapshot_volume)
         #delete snapshot
-        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), snapshot_id)
+        delete_snapshot(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), snapshot_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
         #validate snapshot creation
-        Assert(snapshot_id is not None, "volume is not created successfully", endpoints, overcloud_token, environment, settings)
-    
-
+        Assert(snapshot_id is not None, "snapshot not created successfully", endpoints, overcloud_token, environment, settings)
+        Assert(snapshot_volume is not None, "volume is not created successfully from snapshot", endpoints, overcloud_token, environment, settings)
 
 
     @pytest.mark.powerflex
@@ -3582,3 +3953,94 @@ def Assert(test, message, endpoints, overcloud_token, environment, settings):
     else:
         testcases_detail[currentFuncName(1)]= [testcases_detail.get(currentFuncName(1))[0],"Passed", ""]
 currentFuncName = lambda n=0: sys._getframe(n + 1).f_code.co_name
+
+def test_a():
+    pass
+
+def test_b():
+    pass
+
+def test_q():
+    pass
+
+def test_ee():
+    pass
+
+def test_re():
+    pass
+
+def test_avc():
+    pass
+
+def test_bv():
+    pass
+
+def test_qs():
+    pass
+
+def test_es():
+    pass
+
+def test_rs():
+    pass
+
+def test_aw():
+    pass
+
+def test_bw():
+    pass
+
+def test_qw():
+    pass
+
+def test_eew():
+    pass
+
+def test_rew():
+    pass
+
+def test_avwc():
+    pass
+
+def test_bwv():
+    pass
+
+def test_qws():
+    pass
+
+def test_ews():
+    pass
+
+def test_wrs():
+    pass
+
+def test_ea():
+    pass
+
+def test_eb():
+    pass
+
+def test_eq():
+    pass
+
+def test_eee():
+    pass
+
+def test_ree():
+    pass
+
+def test_avec():
+    pass
+
+def test_bev():
+    pass
+
+def test_qes():
+    pass
+
+def test_ees():
+    pass
+
+def test_res():
+    pass
+

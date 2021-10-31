@@ -128,7 +128,6 @@ def get_mode_of_pci_devices(baremetal_nodes):
             pci_device= "pci/0000:"+pci_device+"0"     
             #now get switch mode 
             device_mode= ssh_into_node(node, 'sudo devlink dev eswitch show {}'.format(pci_device))
-            print(device_mode[0])
             #verify device mode
             if ("mode switchdev inline-mode none encap enable" not in device_mode[0]):
                 return False

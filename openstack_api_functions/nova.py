@@ -284,13 +284,13 @@ def create_server(nova_ep, token, server_name, image_id, keypair_name, flavor_id
     data= response.json()
     return data["server"]["links"][0]["href"]  
 
-def create_sriov_server(nova_ep, token, server_name, image_id, keypair_name, flavor_id,  port_id, availability_zone ,security_group_id, host=None):
+def create_sriov_server(nova_ep, token, server_name, image_id, keypair_name, flavor_id,  port_id ,security_group_id, host=None):
     """create sriov server."""
     logging.info("Creating SRIOV server {}".format(server_name))
     payload= {"server": {"name": server_name, "imageRef": image_id,
         "key_name": keypair_name, "flavorRef": flavor_id, "security_groups": [{"name": security_group_id}],
         "max_count": 1, "min_count": 1, "networks": [{"port": port_id}], 
-         "availability_zone": availability_zone}}   
+         }}   
     #if server is created on specific host
     payload_manual_host={
         "host": host
@@ -428,7 +428,7 @@ def live_migrate_server(nova_ep,token, server_id, host=None, block_migration="au
     logging.debug(response.text)
     logging.info("Waiting for live migration")
     #wait for migration 
-    time.sleep(30)
+    time.sleep(60)
     return response.status_code
 
 def search_and_create_server(nova_ep, token, server_name, image_id, key_name, flavor_id,  network_id, security_group_id, host=None, availability_zone= None):
@@ -442,11 +442,11 @@ def search_and_create_server(nova_ep, token, server_name, image_id, key_name, fl
     logging.debug("Server id: "+server_id)    
     return server_id
 
-def search_and_create_sriov_server(nova_ep, token, server_name, image_id, key_name, flavor_id,  port_id, availability_zone, security_group_id, host=None):
+def search_and_create_sriov_server(nova_ep, token, server_name, image_id, key_name, flavor_id,  port_id, security_group_id, host=None):
     """search sriov server and create if not exists."""
     server_id= search_server(nova_ep, token, server_name)
     if server_id is None:
-        server_url= create_sriov_server(nova_ep, token, server_name, image_id, key_name, flavor_id, port_id, availability_zone, security_group_id, host)
+        server_url= create_sriov_server(nova_ep, token, server_name, image_id, key_name, flavor_id, port_id, security_group_id, host)
         server_id= get_server_detail(token, server_url)
     logging.debug("Server id: "+server_id)  
     return server_id

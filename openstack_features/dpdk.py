@@ -1,10 +1,12 @@
 from common_utils import *
+import paramiko
 import logging
 import os
 
 
 def get_ovs_dpdk_ports(baremetal_nodes, expected_ports):
     command= "sudo cat /var/lib/os-net-config/dpdk_mapping.yaml"
+    print(expected_ports)
     try:
         for node in baremetal_nodes:
             ports= ssh_into_node(node, command)
@@ -25,7 +27,7 @@ def verify_status_of_dpdk_ports(baremetal_nodes, expected_ports):
         for node in baremetal_nodes:
             ports= ssh_into_node(node, command)
             ports=ports[0]
-            ttotal_ports= ports.count("dpdk")
+            total_ports= ports.count("dpdk")
             if total_ports != expected_ports:
                 logging.debug("Total DPDK ports are: {}".format(total_ports))
                 return False
@@ -34,7 +36,31 @@ def verify_status_of_dpdk_ports(baremetal_nodes, expected_ports):
     except Exception as e:
         logging.exception(e)
         return False
+def verify_status_of_ovs_dpdk_service(baremetal_nodes):
+    command= "timeout 2 systemctl status ovs-vswitchd.service"           
+    try:
+        for node in baremetal_nodes:
+            ssh_client = paramiko.SSHClient()
+            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh_session = ssh_client.connect(node, username="heat-admin", key_filename=os.path.expanduser("~/.ssh/id_rsa"))
+            logging.debug("Running command in a compute node")
+            #run command
+            stdin, stdout, stderr = ssh_client.exec_command(command)
+            logging.debug("command {} successfully executed on node {}".format(command, node))
+            #decode output
+            status= stdout.read().decode('utf-8')
+            error= stderr.read().decode('utf-8')
+            print(status)
+            if "Active: active (running)" not in status:
+                logging.debug("OVS-DPDK Service Status is: {}".format(status))
+                return False
+        else: 
+            return True
+    except Exception as e:
+        logging.exception(e)
+        return False
     
+
 def verify_status_of_ovs_service(baremetal_nodes):
     command= "service ovs-vswitchd status |grep 'active (running)'"           
     try:
