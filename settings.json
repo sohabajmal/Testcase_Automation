@@ -15,8 +15,9 @@
     "router_name":"testcase_router",
     "external_network_name": "public",
     "external_subnet": "external_sub",
-
-    "image_name": "testcase_image",
+    "sriov_port_name":"sriov_port",
+    "image_name": "testcase_image1",
+    "image2_name": "testcase_image2",
     
     "flavor1_name": "testing_flavor1",
     "flavor2_name": "testing_flavor2",
@@ -24,14 +25,31 @@
     "flavor_disks": 20,
     "flavor_vcpus":4,
 
+    "volume1_name": "testcase_volume1",
+    "volume2_name": "testcase_volume2",
+    "volume_size": 10,
+    "snapshot1_name": "testcase_snapshot1",
+
     "server_1_name": "testcase_server1",
     "server_2_name": "testcase_server2",
     "network_provider_type": "vlan",
     "key_name": "testcase_ssh-key",
     "key_file": "~/testcase_ssh.pem",
+
+    "loadbalancer1_name": "testcase_lb1",
+    "loadbalancer2_name": "testcase_lb2",
+    "listener1_name": "testcase_listenet1",
+    "listener2_name": "testcase_listenet2",
+    "pool1_name": "testcase_pool1",
+    "pool2_name": "testcase_pool2",
     
-    "instance_boot_wait_retires":2,
+    "instance_boot_wait_retires":3,
+    "instance_ssh_wait_retires":3,
+    "loadbalancer_build_retires":2,
+    "loadbalancer_pool_creation_retires":2,
+    "loadbalancer_listener_creation_retires":2,
+    "bare_metal_node_wait_retires":10,
  
-    "sah_ip": "100.67.62.8",
-    "ini_file": "/root/R62_16.1.ini"
+    "sah_ip": "100.67.178.9",
+    "ini_file": "/root/r178.ini"
 }

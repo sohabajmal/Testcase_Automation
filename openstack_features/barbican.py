@@ -44,6 +44,7 @@ def create_barbican_secret(barbican_ep, token):
     secret_id= create_secret(barbican_ep, token, "testcae_secret", "test_case payload")
     return secret_id
 
+
 #def update_barbican_sercret():
 
 

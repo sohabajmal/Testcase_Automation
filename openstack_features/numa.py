@@ -1,11 +1,9 @@
 from openstack_api_functions.nova import *
-from functions import *
+from common_utils import *
 import logging
 import math
 import subprocess
 import pytest
-
-
 
 def get_vcpus_count_of_instance(nova_ep, token, baremetal_nodes, instance):
     host= get_server_baremetal_host(nova_ep, token, instance.get("id"))
@@ -17,6 +15,7 @@ def get_vcpus_count_of_instance(nova_ep, token, baremetal_nodes, instance):
     output=output[0]
     vcpus=output.split('>')
     return vcpus[1][0]
+    
 def get_vcpus_list_of_instance(nova_ep, token, baremetal_nodes, instance):
     host= get_server_baremetal_host(nova_ep, token, instance.get("id"))
     instance_xml_name= get_server_instance_name(nova_ep, token, instance.get("id"))
@@ -35,7 +34,7 @@ def get_possible_numa_instances(compute_ip, vcpus):
     cpu_cores= cpu_cores[0].split(":")
     cpu_cores= cpu_cores[1].strip()
     instance_possible=  math.floor(int(cpu_cores)/vcpus)
-    return instance_possible
+    return instance_possible-1
 
 def verify_list_is_even_or_odd(list):
     output_even=output_odd=0

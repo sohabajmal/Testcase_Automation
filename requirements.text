@@ -1,4 +1,3 @@
-#Below packages will be installed when running this file with pip command
-pytest
-wget
-beautifultable
+pytest==3.5.1
+wget==3.2
+beautifultable==1.0.1
