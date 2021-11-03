@@ -74,7 +74,7 @@ def create_services_endpoints(undercloud_ip, overcloud_ip):
     return endpoints
 def read_ini_settings(sah_ip, ini_file):
     settings_dic={}
-    command= "grep -e mtu_size_global_default= -e nic_env_file= -e hpg_enable= -e hpg_size= -e numa_enable= -e ovs_dpdk_enable= -e sriov_enable= -e smart_nic= -e dvr_enable= -e barbican_enable= -e octavia_enable= -e overcloud_name= -e sanity_image_url= -e domain= -e floating_ip_network_vlan= -e floating_ip_network= -e floating_ip_network_gateway= -e floating_ip_network_start_ip= -e floating_ip_network_end_ip= {}".format(ini_file)
+    command= "grep -e mtu_size_global_default= -e nic_env_file= -e hpg_enable= -e hpg_size= -e numa_enable= -e ovs_dpdk_enable= -e sriov_enable= -e smart_nic= -e dvr_enable= -e barbican_enable= -e octavia_enable= -e overcloud_name= -e sanity_image_url= -e domain= -e floating_ip_network_vlan= -e floating_ip_network= -e floating_ip_network_gateway= -e floating_ip_network_start_ip= -e floating_ip_network_end_ip= -e enable_powerflex_backend {}".format(ini_file)
     settings= ssh_into_node(sah_ip, command, "root")
     #Parse string for new line
     settings= settings[0].split("\n")
@@ -84,16 +84,13 @@ def read_ini_settings(sah_ip, ini_file):
     #DPDK Ports
     deployment=settings[1].split("=")
     deployment=str(deployment[1]).split("/")
-    if("9" or "8" in deployment[0]):
+    if("9" in deployment[0] or "8" in deployment[0]):
         if("sriov" in deployment[0]):
             ports= 2
         else:
             ports=4
     else:
-        if("sriov" in deployment[0]):
-            ports= 2
-        else:
-            ports=4
+        ports= 2
     settings_dic['dpdk_ports']=ports
     #hugepage_enabled
     hpg_enable=settings[2].split("=")
@@ -113,13 +110,13 @@ def read_ini_settings(sah_ip, ini_file):
     #smart_nic
     smart_nic=settings[7].split("=")
     settings_dic['smart_nic']=smart_nic[1]
-    #smart_nic
+    #dvr_enable
     dvr_enable=settings[8].split("=")
     settings_dic['dvr_enabled']=dvr_enable[1]
-    #smart_nic
+    #barbican_enable
     barbican_enable=settings[9].split("=")
     settings_dic['barbican_enabled']=barbican_enable[1]
-    #smart_nic
+    #octavia_enable
     octavia_enable=settings[10].split("=")
     settings_dic['octavia_enabled']=octavia_enable[1]
     #overcloud name
@@ -128,24 +125,28 @@ def read_ini_settings(sah_ip, ini_file):
     #sanity image name
     domain=settings[12].split("=")
     settings_dic['domain']= domain[1]
+    #powerflex_enable
+    powerflex=settings[13].split("=")
+    settings_dic['powerflex_enable']= powerflex[1]
+
     #Get flloating ip details
     #get floating network cidr
-    floating_ip_network_cidr=settings[13].split("=")
+    floating_ip_network_cidr=settings[14].split("=")
     settings_dic['floating_ip_network_cidr']=floating_ip_network_cidr[1]
     #get floating ip start range
-    floating_ip_network_start_ip=settings[14].split("=")
+    floating_ip_network_start_ip=settings[15].split("=")
     settings_dic['floating_ip_network_start_ip']=floating_ip_network_start_ip[1]
     #get floating ip end range
-    floating_ip_network_end_ip=settings[15].split("=")
+    floating_ip_network_end_ip=settings[16].split("=")
     settings_dic['floating_ip_network_end_ip']=floating_ip_network_end_ip[1]
     #get floating network gateway
-    floating_ip_network_gateway=settings[16].split("=")
+    floating_ip_network_gateway=settings[17].split("=")
     settings_dic['floating_ip_network_gateway']=floating_ip_network_gateway[1]
     #get floating network vlan
-    floating_ip_network_vlan=settings[17].split("=")
+    floating_ip_network_vlan=settings[18].split("=")
     settings_dic['floating_ip_network_vlan']=floating_ip_network_vlan[1]
     #sanity image url
-    sanity_image_url=settings[18].split("=")
+    sanity_image_url=settings[19].split("=")
     settings_dic['sanity_image_url']=sanity_image_url[1]
     #sanity image name
     sanity_image_url=sanity_image_url[1].split("/")
@@ -164,7 +165,7 @@ def ssh_into_node(host_ip, command, user_name="heat-admin"):
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         #if username is root
         if (user_name == "root"):
-            ssh_session = ssh_client.connect(host_ip, 22, "root", "Dell0SS!")
+            ssh_session = ssh_client.connect(host_ip, 22, user_name, "Dell0SS!")
         else:
             #if public key saved in id_rsa
             ssh_session = ssh_client.connect(host_ip, username=user_name, key_filename=os.path.expanduser("~/.ssh/id_rsa")) 
@@ -233,8 +234,8 @@ def cold_migrate_instance(nova_ep, token, instance_id, instance_floating_ip, set
 
 def get_compute_name(baremetal_nodes, compute, domain):
     compute= [key for key, val in baremetal_nodes.items() if compute in key]
-    compute= "{}.localdomain".format(compute[0])
-    #compute= "{}.{}".format(compute[0],domain)
+    #compute= "{}.localdomain".format(compute[0])
+    compute= "{}.{}".format(compute[0],domain)
     return compute
 def get_node_ip(baremetal_nodes, node_name):
     ip= [val for key, val in baremetal_nodes.items() if node_name in key]
@@ -353,13 +354,18 @@ def get_flavor_id(feature, nova_ep, token, flavor_name, settings, deployed_featu
     
     if (feature=="hugepage"):
         put_extra_specs_in_flavor(nova_ep, token, flavor_id, False, mem_page_size)
-    
-    if (feature=="sriov" or feature=="barbican" or feature=="dvr" or feature=="mtu9000" or feature=="dpdk" or feature=="offloading" or feature=="octavia"):
+
+    if (feature=="dpdk"):
+        put_ovs_dpdk_specs_in_flavor(nova_ep, token, flavor_id)
+    if (feature=="sriov" or feature=="barbican" or feature=="dvr" or feature=="mtu9000" or feature=="dpdk" or feature=="offloading" or feature=="octavia" or feature=="powerflex"):
         if("numa" in deployed_features):
             put_extra_specs_in_flavor(nova_ep, token, flavor_id, True)
     return flavor_id
 
 def instance_ssh_test(ip, settings):
+    """
+
+    """
     try:
         remove_key= "ssh-keygen -R {}".format(ip)
         os.system(remove_key)
@@ -422,8 +428,38 @@ def ping_test_between_instances(ip, ping_ip, settings, command=None):
         if(retries==settings["instance_ssh_wait_retires"]):
             break
 
+def restart_baremetal_node(baremetal_node, settings):
+    #reboot node
+    ssh_output= ssh_into_node(baremetal_node, "sudo reboot")    
+    #wait for system to shutdown
+    time.sleep(30)
+    #wait for node to restart
+    retries=0
+    while(1):
+        response = os.system("ping -c 3 " + baremetal_node)
+        if response == 0:
+            logging.debug ("Ping successfull!") 
+            return True
+        logging.debug("Waiting for server to boot")
+        time.sleep(30)
+        retries=retries+1
+        if(retries == settings.get("bare_metal_node_wait_retires")):
+            return False
 
+def stop_service_on_node(node, service):
+    command= "sudo systemctl stop {}".format(service)
+    ssh_into_node(node, command)
+    time.sleep(3)
 
+def start_service_on_node(node, service):
+    command= "sudo systemctl start {}".format(service)
+    ssh_into_node(node, command)
+    time.sleep(3)
+
+def restart_service_on_node(node, service):
+    command= "sudo systemctl restart {}".format(service)
+    ssh_into_node(node, command)
+    time.sleep(3)
 
 
 

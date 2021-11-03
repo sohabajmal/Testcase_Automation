@@ -51,7 +51,7 @@ def read_ini_file(settings):
 
 #print list of deployed features and results
 @pytest.fixture(scope="session", name="report", autouse=True)
-def print_features_list_and_results(ini_file, endpoints, settings):
+def print_features_list_and_results(ini_file, endpoints, settings, overcloud):
     #print features enabled ini file
     for key, value in ini_file.items():
         if(value== "true"):
@@ -60,6 +60,8 @@ def print_features_list_and_results(ini_file, endpoints, settings):
                 key[0]= "offloading"
             if(key[0]== "ovs"):
                 key[0]= "dpdk"
+            if(key[1]== "powerflex"):
+                key[0]= "powerflex"
             deployed_features.append(key[0])
             logging.info("{} is Enabled".format(key[0].capitalize()))
         if(value == "9000"):
@@ -73,7 +75,8 @@ def print_features_list_and_results(ini_file, endpoints, settings):
     It will clean environment and print report
     '''
     #cleaning environment at end of testcases
-    #clean_all_environment(ini_file, endpoints, settings, overcloud_token)
+    overcloud_token= get_authentication_token(endpoints.get("keystone"), overcloud.get("username"), overcloud.get("password"))
+    clean_all_environment(ini_file, endpoints, settings, overcloud_token)
     #custom report
     logging.info("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
     logging.info("-------- Custom Report ------------")
@@ -270,10 +273,10 @@ def delete_environment(endpoints, overcloud_token, environment, settings):
     if server2_id is not None:
         delete_server_with_id(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, server2_id)
     #delte flavors if exist
-    flavor1_id=(endpoints.get("nova"), overcloud_token, settings["flavor1_name"])
+    flavor1_id=search_flavor(endpoints.get("nova"), overcloud_token, settings["flavor1_name"])
     if flavor1_id is not None:
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor1_id)
-    flavor2_id=(endpoints.get("nova"), overcloud_token, settings["flavor2_name"])
+    flavor2_id=search_flavor(endpoints.get("nova"), overcloud_token, settings["flavor2_name"])
     if flavor2_id is not None:
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor2_id)
 
@@ -851,7 +854,6 @@ class TestOpenStack():
 
     @pytest.mark.hugepage
     @pytest.mark.functional
-    @pytest.mark.demo
     def test_verify_instance_creation_with_hugepage_1GB_flavor_and_1GB_deployment(self, settings, environment, endpoints, overcloud_token, ini_file):
         skip_test_if_feature_not_enabled("hugepage")
         #create flavor
@@ -906,7 +908,7 @@ class TestOpenStack():
 
     @pytest.mark.hugepage
     @pytest.mark.functional
-    def test_verify_hugepage_instance_consumed_coorrect_number_of_hugepages(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+    def test_verify_hugepage_instance_consumed_correct_number_of_hugepages(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("hugepage")
         #create flavor
         flavor_id= get_flavor_id("hugepage", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
@@ -1882,9 +1884,8 @@ class TestOpenStack():
     '''
     Barbican Testcases 
     '''
-    @pytest.mark.demo
     @pytest.mark.barbican
-    @pytest.mark.negative
+    @pytest.mark.functional
     def test_create_barbican_secret(self, endpoints, overcloud_token, environment, settings):
         skip_test_if_feature_not_enabled("barbican")
         secret_id= create_barbican_secret(endpoints.get("barbican"), overcloud_token)
@@ -1893,7 +1894,6 @@ class TestOpenStack():
     
     @pytest.mark.barbican
     @pytest.mark.functional
-    @pytest.mark.demo
     def test_search_barbican_secret(self, endpoints, overcloud_token, environment, settings):
         skip_test_if_feature_not_enabled("barbican")
         secret_id= create_barbican_secret(endpoints.get("barbican"), overcloud_token)
@@ -1911,7 +1911,7 @@ class TestOpenStack():
         Assert(payload =="test_case payload", "secret has incorrect payload", endpoints, overcloud_token, environment, settings)
   
     @pytest.mark.barbican
-    @pytest.mark.negative
+    @pytest.mark.functional
     def test_verify_deletion_of_barbican_secret(self, endpoints, overcloud_token, environment, settings):
         skip_test_if_feature_not_enabled("barbican")
         secret_id= create_barbican_secret(endpoints.get("barbican"), overcloud_token)
@@ -1928,7 +1928,7 @@ class TestOpenStack():
         delete_secret(endpoints.get("barbican"), secret_id, overcloud_token)
         Assert(search_secret !="None", "failed to create symmetric key", endpoints, overcloud_token, environment, settings)
   
-    @pytest.mark.error
+    @pytest.mark.barbican
     @pytest.mark.functional
     def test_verify_barbican_image_creation(self, settings, environment, endpoints, overcloud_token, ini_file):
         skip_test_if_feature_not_enabled("barbican")
@@ -1940,20 +1940,17 @@ class TestOpenStack():
         status= get_image_status(endpoints.get("image"), overcloud_token, image_id)
         #if image is queued upload file
         if status== "queued":
-            print("@@@@")
-            print(ini_file.get("image_file_name"))
-            image_file= open(os.path.expanduser(ini_file.get("image_file_name")), 'rb')
-
-            upload_file_to_image(endpoints.get("image"), overcloud_token, image_file, image_id)
+            try:
+                image_file= open(os.path.expanduser(ini_file.get("image_file_name")), 'rb')
+                upload_file_to_image(endpoints.get("image"), overcloud_token, image_file, image_id)
+            except:
+                pass
         #get image status
-        image_status= get_image_status(endpoints.get("image"), overcloud_token, image_file)
+        image_status= get_image_status(endpoints.get("image"), overcloud_token, image_id)
         #delete image
         delete_image(endpoints.get("image"), overcloud_token, image_id)
-        print("###")
-        print(image_status)
-
         Assert(image_status == "active", "barbican image is not in active state", endpoints, overcloud_token, environment, settings)
-
+    
     @pytest.mark.barbican
     @pytest.mark.functional
     def test_verify_barbican_instance_creation(self, settings, environment, endpoints, overcloud_token):
@@ -1967,6 +1964,182 @@ class TestOpenStack():
         #delete flavor
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
         Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.barbican
+    @pytest.mark.functional
+    def test_verify_volume_creation_with_signed_image(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("barbican")
+        #create instance
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), None, environment.get("image_id"))
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #verify volume creation
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+    
+    @pytest.mark.barbican
+    @pytest.mark.functional
+    def test_verify_image_signatures_of_volume(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("barbican")
+        #create instance
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), None, environment.get("image_id"))
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #Get volume metadata
+        volume_metadata= get_volume_metadata(endpoints.get("cinder"), overcloud_token, volume_id, environment.get("project_id"))
+        #delete instance
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #verify volume creation
+        Assert("'signature_verified': 'True'" in str(volume_metadata), "volume signature verification failed", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.barbican
+    @pytest.mark.volume
+    def test_verify_attach_volume_to_barbican_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("barbican")
+        #create flavor
+        flavor_id= get_flavor_id("barbican", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume successfully attached to server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.barbican
+    @pytest.mark.volume
+    def test_verify_detach_volume_from_barbican_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("barbican")
+        #create flavor
+        flavor_id= get_flavor_id("barbican", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #detach volume
+        if volume_status_after_attachment =="in-use":
+            detach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_deattachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_deattachment == "available", "volume is not detached from server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.barbican
+    @pytest.mark.volume
+    def test_verify_migration_of_barbican_instance_with_attached_volume(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("barbican")
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute1= get_compute_name(baremetal_nodes, "compute-1", ini_file.get("domain"))
+        #create flavor
+        flavor_id= get_flavor_id("barbican", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #migrate instance
+        #get host of instance
+        host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #live migrate instance
+        response= live_migrate_server(endpoints.get("nova"), overcloud_token, instance.get("id"), compute1)
+        #get host of instance
+        new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(response ==202, "live migration failed", endpoints, overcloud_token, environment, settings)
+        Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response==0, "instance ping failed after live migration", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.barbican
+    @pytest.mark.volume
+    def test_verify_create_snapshot_from_barbican_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("barbican")
+        #create flavor
+        flavor_id= get_flavor_id("barbican", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #create snapshot
+        instance_snapshot_id=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.barbican
+    @pytest.mark.volume
+    def test_verify_create_barbican_instance_from_snapshot(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("barbican")
+        #create flavor
+        flavor_id= get_flavor_id("barbican", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #create snapshot
+        instance_snapshot_id=""
+        instance2=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        if instance_snapshot_id != None:
+            instance2= search_and_create_server(endpoints.get("nova"), overcloud_token, settings["server_2_name"], instance_snapshot_id, settings["key_name"], flavor_id,  environment.get("network1_id"), environment.get("security_group_id"))
+            server_build_wait(endpoints.get("nova"), overcloud_token, [instance2])
+            instance2_status= check_server_status(endpoints.get("nova"), overcloud_token, instance2)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        delete_server_with_id(endpoints.get("nova"), overcloud_token, instance2)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+        Assert(instance2_status == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+
 
     '''
     DVR Testcases 
@@ -1986,6 +2159,61 @@ class TestOpenStack():
         nodes_ips= get_node_ip(baremetal_nodes, "compute")
         dvr_enabled= verify_dvr_agent_on_nodes(nodes_ips, "compute")
         Assert(dvr_enabled == True, "dvr is not enabled on all compute nodes", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_that_l3agent_must_be_distributed_on_all_the_compute_nodes(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
+        skip_test_if_feature_not_enabled("dvr")
+        agents= get_agent_list(endpoints.get("neutron"), overcloud_token)
+        total_l3_agents= agents.count("L3 agent")
+        total_compute_nodes= len(get_node_ip(baremetal_nodes, "compute"))
+        total_controller_nodes= len(get_node_ip(baremetal_nodes, "controller"))
+        Assert(total_l3_agents == (total_compute_nodes+total_controller_nodes), "L3 agent is not distributed on all nodes", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_that_metadata_agent_must_be_distributed_on_all_the_compute_nodes(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
+        skip_test_if_feature_not_enabled("dvr")
+        agents= get_agent_list(endpoints.get("neutron"), overcloud_token)
+        total_l3_agents= agents.count("Metadata agent")
+        total_compute_nodes= len(get_node_ip(baremetal_nodes, "compute"))
+        total_controller_nodes= len(get_node_ip(baremetal_nodes, "controller"))
+        Assert(total_l3_agents == (total_compute_nodes+total_controller_nodes), "Metadata agent is not distributed on all nodes", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_that_L2_population_driver_must_be_enabled_on_all_the_compute_and_controller_nodes(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
+        skip_test_if_feature_not_enabled("dvr")
+        #get IP's of compte nodes
+        nodes_ips= get_node_ip(baremetal_nodes, "compute")
+        #get IP's of controller nodes
+        compute_drivers= verify_l2_population_driver_on_nodes(nodes_ips)
+        nodes_ips= get_node_ip(baremetal_nodes, "controller")
+        controller_drivers= verify_l2_population_driver_on_nodes(nodes_ips)
+        Assert(compute_drivers == True, "L2population driver is not enabled on all compute nodes", endpoints, overcloud_token, environment, settings)
+        Assert(controller_drivers == True, "L2population driver is not enabled on all controller nodes", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_settings_of_dvr_are_persistent_when_compute_is_restsarted(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
+        skip_test_if_feature_not_enabled("dvr")
+        nodes_ip= get_node_ip(baremetal_nodes, "compute")
+        #restart compute node
+        restart_baremetal_node(nodes_ip[0], settings)
+        #verify dvr
+        dvr_enabled= verify_dvr_agent_on_nodes(nodes_ip, "compute")
+        Assert(dvr_enabled == True, "dvr is enabled persistent restarting compute", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_settings_of_dvr_are_persistent_when_controller_is_restsarted(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
+        skip_test_if_feature_not_enabled("dvr")
+        nodes_ip= get_node_ip(baremetal_nodes, "controller")
+        #restart compute node
+        restart_baremetal_node(nodes_ip[0], settings)
+        #verify dvr
+        dvr_enabled= verify_dvr_agent_on_nodes(nodes_ip, "controller")
+        Assert(dvr_enabled == True, "dvr is persistent after restarting controller", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.dvr
     @pytest.mark.functional
@@ -2187,6 +2415,306 @@ class TestOpenStack():
         Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
         Assert(namespace_id != "", "floating ip namespace not found", endpoints, overcloud_token, environment, settings)
 
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_delete_all_the_instance_from_one_of_the_compute_node_to_see_that_router_namespace_still_exits(self, settings, environment, endpoints, overcloud_token, baremetal_nodes):
+        skip_test_if_feature_not_enabled("dvr")
+        compute0_ip=  get_node_ip(baremetal_nodes, "compute-0")
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #Get namespace
+        namespace_id= get_namespace_id(compute0_ip, "qr-")        
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(namespace_id is not None, "qrouter existes on compute node", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_down_the_L3_agent_on_one_of_compute_node_and_send_traffic_from_this_node(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dvr")
+        #get compute node name and ip
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute1= get_compute_name(baremetal_nodes, "compute-1", ini_file.get("domain"))
+        compute0_ip=  get_node_ip(baremetal_nodes, "compute-0")
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network2_name"], environment.get("network2_id"), compute1)
+        #Ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+            ping_test_before_service_stop= ping_test_between_instances(instance.get("floating_ip"), instance2.get("ip"), settings)
+        #stop l3 service
+        stop_service_on_node(compute0_ip, "tripleo_neutron_l3_agent.service")
+        #ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response_after_serice_stop =ping_test_between_instances(instance.get("floating_ip"), instance2.get("ip"), settings)
+        start_service_on_node(compute0_ip, "tripleo_neutron_l3_agent.service")
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance2)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        
+        print(ping_test_before_service_stop)
+        print(ping_response_after_serice_stop)
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test_before_service_stop[0] == True, "instance can not ping other network", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response_after_serice_stop[0] != True, "instance can ping other network after l3 service is disabled", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_dvr_is_work_fine_with_numa(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dvr")
+        skip_test_if_feature_not_enabled("numa")
+        #create flavor
+        flavor_id= get_flavor_id("numa", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        #Ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response == 0, "instance ping failed", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_dvr_is_work_fine_with_hugepage(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dvr")
+        skip_test_if_feature_not_enabled("hugepage")
+        #create flavor
+        flavor_id= get_flavor_id("hugepage", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        #Ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response == 0, "instance ping failed", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_dvr_instance_cold_migration(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dvr")
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        if instance.get("status") =="active":
+            #get host of instance
+            host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+            #cold migrate instance
+            response=  cold_migrate_instance(endpoints.get("nova"), overcloud_token, instance.get("id"), instance.get("floating_ip"), settings)
+            #new host
+            new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+            #ping test
+            if(instance.get("floating_ip") is not None):
+                ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id) 
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)       
+        Assert(response ==202, "cold migration failed", endpoints, overcloud_token, environment, settings)
+        Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response==0, "instance ping failed after cold migration", endpoints, overcloud_token, environment, settings)
+        
+    @pytest.mark.dvr
+    @pytest.mark.functional
+    def test_verify_dvr_instance_live_migration(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dvr")
+        #get compute nodes name
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute1= get_compute_name(baremetal_nodes, "compute-1", ini_file.get("domain"))
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        if instance.get("status") =="active": 
+            #get host of instance
+            host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+            #live migrate instance
+            response= live_migrate_server(endpoints.get("nova"), overcloud_token, instance.get("id"), compute1)
+            #get host of instance
+            new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+            #ping test
+            if(instance.get("floating_ip") is not None):
+                ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)        
+        Assert(response ==202, "live migration failed", endpoints, overcloud_token, environment, settings)
+        Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response==0, "instance ping failed after live migration", endpoints, overcloud_token, environment, settings)
+    
+    @pytest.mark.dvr
+    @pytest.mark.volume
+    def test_verify_attach_volume_to_dvr_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dvr")
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume successfully attached to server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.volume
+    def test_verify_detach_volume_from_dvr_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dvr")
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #detach volume
+        if volume_status_after_attachment =="in-use":
+            detach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_deattachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_deattachment == "available", "volume is not detached from server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.volume
+    def test_verify_migration_of_dvr_instance_with_attached_volume(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dvr")
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute1= get_compute_name(baremetal_nodes, "compute-1", ini_file.get("domain"))
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #migrate instance
+        #get host of instance
+        host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #live migrate instance
+        response= live_migrate_server(endpoints.get("nova"), overcloud_token, instance.get("id"), compute1)
+        #get host of instance
+        new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(response ==202, "live migration failed", endpoints, overcloud_token, environment, settings)
+        Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response==0, "instance ping failed after live migration", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.volume
+    def test_verify_create_snapshot_from_dvr_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dvr")
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #create snapshot
+        instance_snapshot_id=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dvr
+    @pytest.mark.volume
+    def test_verify_create_dvr_instance_from_snapshot(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dvr")
+        #create flavor
+        flavor_id= get_flavor_id("dvr", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #create snapshot
+        instance_snapshot_id=""
+        instance2=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        if instance_snapshot_id != None:
+            instance2= search_and_create_server(endpoints.get("nova"), overcloud_token, settings["server_2_name"], instance_snapshot_id, settings["key_name"], flavor_id,  environment.get("network1_id"), environment.get("security_group_id"))
+            server_build_wait(endpoints.get("nova"), overcloud_token, [instance2])
+            instance2_status= check_server_status(endpoints.get("nova"), overcloud_token, instance2)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        delete_server_with_id(endpoints.get("nova"), overcloud_token, instance2)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+        Assert(instance2_status == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+
+
     '''
     OVS DPDK Testcases
     '''
@@ -2221,6 +2749,26 @@ class TestOpenStack():
         command= "timeout 2 systemctl status tripleo_neutron_ovs_agent.service"
         neutron_service_status= subprocess.run([command], shell=True, stdout=subprocess.PIPE)
         Assert("active (running)" in neutron_service_status.stdout.decode('utf-8'), "Neutron service is not working properly", endpoints, overcloud_token, environment, settings)
+     
+    @pytest.mark.dpdk
+    @pytest.mark.functional
+    def test_verify_hugegages_are_consumed_appropriately_after_deployment_of_ovsdpdk(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dpdk")
+        #get ip of compuye node
+        compute0_ip=get_node_ip(baremetal_nodes, "compute-0")
+        #get hugepage info
+        output= ssh_into_node(compute0_ip, " grep Huge /proc/meminfo")
+        print("@@@@@@")
+        print(output)
+        output=output[0]
+        #get free hugepage
+        total_hugepage= parse_hugepage_size(output, "HugePages_Total:")
+        #get free hugepage
+        hugepg_free= parse_hugepage_size(output, "HugePages_Free:")
+        print("@@@@@@")
+        print((int(total_hugepage)-int(hugepg_free)))
+        #validate hugepage size
+        Assert((int(total_hugepage)-int(hugepg_free))== 5, "hugepages are not consumed appropriately after deployment", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.dpdk
     @pytest.mark.functional
@@ -2258,7 +2806,6 @@ class TestOpenStack():
 
     @pytest.mark.dpdk
     @pytest.mark.functional
-    @pytest.mark.development
     def test_verify_the_ovs_dpdk_works_fine_with_floating_ip(self, settings, environment, endpoints, overcloud_token):
         skip_test_if_feature_not_enabled("dpdk")
         #create flavor
@@ -2280,6 +2827,32 @@ class TestOpenStack():
 
     @pytest.mark.dpdk
     @pytest.mark.functional
+    def validate_ovs_virtual_nics_are_assigned_with_correct_ips_on_instance_reboot(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dpdk")
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        #ping test instance
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+            #reboot instance
+            reboot_server(endpoints.get("nova"), overcloud_token, instance.get("id"))
+            server_build_wait(endpoints.get("nova"), overcloud_token, [instance.get("id")])
+            ping_response2 = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete port
+        delete_port(endpoints.get("neutron"), overcloud_token, instance.get("port_id"))
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response == 0, "instance ping failed", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response2 == 0, "instance do not have correct ip after restart", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.functional
     def test_verify_the_communication_of_two_ovs_dpdk_instance_in_same_compute_node_with_only_one_instance_having_floating_ip(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("dpdk")
         #Get compute nodes
@@ -2290,12 +2863,10 @@ class TestOpenStack():
         instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"), compute0)
         #ping test instance
-        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
+        if(instance1.get("floating_ip") is not None):
             ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
-            ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
-        if ping_response1==0 and ping_response2==0:
-            ping_test1= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("floating_ip"), settings)
-            ping_test2= ping_test_between_instances(instance2.get("floating_ip"), instance1.get("floating_ip"), settings)
+        if ping_response1==0 :
+            ping_test1= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("ip"), settings)
         #delete instance
         delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance1)
         delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance2)
@@ -2306,8 +2877,8 @@ class TestOpenStack():
         delete_port(endpoints.get("neutron"), overcloud_token, instance2.get("port_id"))
         #check status of server is active or not
         Assert((instance1.get("status") or instance2.get("status"))   == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
-        Assert(ping_response1 == 0 and ping_response2==0, "instance ping failed", endpoints, overcloud_token, environment, settings)
-        Assert(ping_test1[0] == True and ping_test2[0]==True, "communication between instances failed", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response1 == 0 , "instance ping failed", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test1[0] == True , "communication between instances failed when one instance has only floating ip", endpoints, overcloud_token, environment, settings)
     
     @pytest.mark.dpdk
     @pytest.mark.functional
@@ -2372,6 +2943,225 @@ class TestOpenStack():
         Assert(ping_response1 == 0 and ping_response2==0, "instance ping failed", endpoints, overcloud_token, environment, settings)
         Assert(ping_test1[0] == True and ping_test2[0]==True, "communication between instances failed", endpoints, overcloud_token, environment, settings)
 
+    @pytest.mark.dpdk
+    @pytest.mark.functional 
+    def validates_the_ovs_dpdk_is_working_fine_with_the_memory_flavor_assigned_in_hugepages(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dpdk")
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #put hugepage specs in flavor
+        put_extra_specs_in_flavor(endpoints.get("nova"), overcloud_token, flavor_id, False, "large")
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "yes")
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.functional
+    def test_validate_the_scenario_when_ovs_Service_is_restarted(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dpdk")
+        #get compute node and ip
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute0_ip=get_node_ip(baremetal_nodes, "compute-0")
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        #restart ovs service
+        restart_service_on_node(compute0_ip, "ovs-vswitchd")
+        #wait for dpdk ports to become online
+        time.sleep(30)
+        #Ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response == 0, "instance ping failed after restarting OVS service", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.functional
+    def test_verify_instance_creation_with_dpdk_flaor_when_all_vcpus_are_consumed(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dpdk")
+        instances= []
+        instances_status=[]
+        #get compute nodes name
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute0_ip=get_node_ip(baremetal_nodes, "compute-0")
+        #get possible instances on compute node
+        instances_possible= get_possible_numa_instances(compute0_ip, 20)
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features, 20)
+        #create Instances
+        for i in range (0, instances_possible):
+            instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, "test_server{}".format(i), settings["network1_name"], environment.get("network1_id"), compute0, "Yes")
+            instances_status.append(instance.get("status"))
+            instances.append(instance)
+        #create extra instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "Yes")
+        instances.append(instance)
+        #delete instance
+        for instance in instances:
+            delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        Assert("error" not in instances_status[:-1] , "instances are not created as expected when vcpu are not consumed", endpoints, overcloud_token, environment, settings)
+        Assert(instance.get("status") != "active", "instances are not created as expected when vcpu are consumed ", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.volume
+    def test_verify_attach_volume_to_dpdk_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dpdk")
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume successfully attached to server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.volume
+    def test_verify_detach_volume_from_dpdk_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dpdk")
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #detach volume
+        if volume_status_after_attachment =="in-use":
+            detach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_deattachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_deattachment == "available", "volume is not detached from server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.volume
+    def test_verify_migration_of_dpdk_instance_with_attached_volume(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("dpdk")
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute1= get_compute_name(baremetal_nodes, "compute-1", ini_file.get("domain"))
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #migrate instance
+        #get host of instance
+        host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #live migrate instance
+        response= live_migrate_server(endpoints.get("nova"), overcloud_token, instance.get("id"), compute1)
+        #get host of instance
+        new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(response ==202, "live migration failed", endpoints, overcloud_token, environment, settings)
+        Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response==0, "instance ping failed after live migration", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.volume
+    def test_verify_create_snapshot_from_dpdk_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dpdk")
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #create snapshot
+        instance_snapshot_id=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.dpdk
+    @pytest.mark.volume
+    def test_verify_create_dpdk_instance_from_snapshot(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("dpdk")
+        #create flavor
+        flavor_id= get_flavor_id("dpdk", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #create snapshot
+        instance_snapshot_id=""
+        instance2=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        if instance_snapshot_id != None:
+            instance2= search_and_create_server(endpoints.get("nova"), overcloud_token, settings["server_2_name"], instance_snapshot_id, settings["key_name"], flavor_id,  environment.get("network1_id"), environment.get("security_group_id"))
+            server_build_wait(endpoints.get("nova"), overcloud_token, [instance2])
+            instance2_status= check_server_status(endpoints.get("nova"), overcloud_token, instance2)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        delete_server_with_id(endpoints.get("nova"), overcloud_token, instance2)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+        Assert(instance2_status == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+
     '''
     MTU9000 Testcases
     '''
@@ -2388,14 +3178,6 @@ class TestOpenStack():
     def test_verify_controller_nodes_network_settings_for_mtu_size_9000(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
         skip_test_if_feature_not_enabled("mtu9000")
         nodes_ips= get_node_ip(baremetal_nodes, "controller")
-        interfaces_mtu_status= get_interfaces_mtu_size(nodes_ips)
-        Assert(interfaces_mtu_status == True, "Mtu9000 is not enabled on all interfaces", endpoints, overcloud_token, environment, settings)
-
-    @pytest.mark.mtu9000
-    @pytest.mark.functional
-    def test_verify_storage_nodes_network_settings_for_mtu_size_9000(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
-        skip_test_if_feature_not_enabled("mtu9000")
-        nodes_ips= get_node_ip(baremetal_nodes, "storage")
         interfaces_mtu_status= get_interfaces_mtu_size(nodes_ips)
         Assert(interfaces_mtu_status == True, "Mtu9000 is not enabled on all interfaces", endpoints, overcloud_token, environment, settings)
 
@@ -2609,6 +3391,110 @@ class TestOpenStack():
         Assert(ping_response1 == 0 and ping_response2==0, "instance ping failed", endpoints, overcloud_token, environment, settings)
         #verify communication between instances
         Assert(ping_test1[0] == True and ping_test2[0]==True, "communication between instances failed", endpoints, overcloud_token, environment, settings)
+    
+    @pytest.mark.mtu9000
+    @pytest.mark.functional
+    def test_verify_tnshat_itances_are_able_communicate_with_eachother_on_lower_mtu_sizes(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("mtu9000")
+        #Get compute nodes
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        #create flavor
+        flavor_id= get_flavor_id("mtu9000", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance1= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        instance2= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_2_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        #ping test instance
+        if((instance1.get("floating_ip") or instance2.get("floating_ip")) is not None):
+            ping_response1 = os.system("ping -c 3 " + instance1.get("floating_ip"))
+            ping_response2 = os.system("ping -c 3 " + instance2.get("floating_ip"))
+        if ping_response1==0 and ping_response2==0:
+            command="ping -c 3 -s 64 -M do {}".format(instance2.get("floating_ip"))
+            ping_test_64= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("floating_ip"), settings, command)
+            command="ping -c 3 -s 128 -M do {}".format(instance2.get("floating_ip"))
+            ping_test_128= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("floating_ip"), settings, command)
+            command="ping -c 3 -s 512 -M do {}".format(instance2.get("floating_ip"))
+            ping_test_512= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("floating_ip"), settings, command)
+            command="ping -c 3 -s 1500 -M do {}".format(instance2.get("floating_ip"))
+            ping_test_1500= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("floating_ip"), settings, command)
+            command="ping -c 3 -s 3000 -M do {}".format(instance2.get("floating_ip"))
+            ping_test_3000= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("floating_ip"), settings, command)
+            command="ping -c 3 -s 6000 -M do {}".format(instance2.get("floating_ip"))
+            ping_test_6000= ping_test_between_instances(instance1.get("floating_ip"), instance2.get("floating_ip"), settings, command)
+
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance1)
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance2)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #check status of server is active or not
+        Assert((instance1.get("status") or instance2.get("status"))   == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        #verify instance ping
+        Assert(ping_response1 == 0 and ping_response2==0, "instance ping failed", endpoints, overcloud_token, environment, settings)
+        #verify communication between instances
+        Assert(ping_test_64[0] == True, "communication between instances failed on mtu size 64", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test_128[0] == True, "communication between instances failed on mtu size 128", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test_512[0] == True, "communication between instances failed on mtu size 512", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test_1500[0] == True, "communication between instances failed on mtu size 512", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test_3000[0] == True, "communication between instances failed on mtu size 512", endpoints, overcloud_token, environment, settings)
+        Assert(ping_test_6000[0] == True, "communication between instances failed on mtu size 512", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.mtu9000
+    @pytest.mark.functional
+    def test_verify_storage_nodes_are_able_communicate_with_eachother_on_lower_mtu_sizes(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("mtu9000")
+        nodes_ips= get_node_ip(baremetal_nodes, "storage")
+        ping_64= ping_nodes_on_custom_mtu(nodes_ips, 64)
+        ping_128= ping_nodes_on_custom_mtu(nodes_ips, 128)
+        ping_512= ping_nodes_on_custom_mtu(nodes_ips, 512)
+        ping_1500= ping_nodes_on_custom_mtu(nodes_ips, 1500)
+        ping_3000= ping_nodes_on_custom_mtu(nodes_ips, 3000)
+        ping_6000= ping_nodes_on_custom_mtu(nodes_ips, 6000)
+        #validate ping responses
+        Assert(ping_64 == True, "Nodes can not ping each other with mtu size 64", endpoints, overcloud_token, environment, settings)
+        Assert(ping_128 == True, "Nodes can not ping each other with mtu size 128", endpoints, overcloud_token, environment, settings)
+        Assert(ping_512 == True, "Nodes can not ping each other with mtu size 512", endpoints, overcloud_token, environment, settings)
+        Assert(ping_1500 == True, "Nodes can not ping each other with mtu size 1500", endpoints, overcloud_token, environment, settings)
+        Assert(ping_3000 == True, "Nodes can not ping each other with mtu size 3000", endpoints, overcloud_token, environment, settings)
+        Assert(ping_6000 == True, "Nodes can not ping each other with mtu size 6000", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.mtu9000
+    @pytest.mark.functional
+    def test_verify_controller_nodes_are_able_communicate_with_eachother_on_lower_mtu_sizes(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("mtu9000")
+        nodes_ips= get_node_ip(baremetal_nodes, "controller")
+        ping_64= ping_nodes_on_custom_mtu(nodes_ips, 64)
+        ping_128= ping_nodes_on_custom_mtu(nodes_ips, 128)
+        ping_512= ping_nodes_on_custom_mtu(nodes_ips, 512)
+        ping_1500= ping_nodes_on_custom_mtu(nodes_ips, 1500)
+        ping_3000= ping_nodes_on_custom_mtu(nodes_ips, 3000)
+        ping_6000= ping_nodes_on_custom_mtu(nodes_ips, 6000)
+        #validate ping responses
+        Assert(ping_64 == True, "Nodes can not ping each other with mtu size 64", endpoints, overcloud_token, environment, settings)
+        Assert(ping_128 == True, "Nodes can not ping each other with mtu size 128", endpoints, overcloud_token, environment, settings)
+        Assert(ping_512 == True, "Nodes can not ping each other with mtu size 512", endpoints, overcloud_token, environment, settings)
+        Assert(ping_1500 == True, "Nodes can not ping each other with mtu size 1500", endpoints, overcloud_token, environment, settings)
+        Assert(ping_3000 == True, "Nodes can not ping each other with mtu size 3000", endpoints, overcloud_token, environment, settings)
+        Assert(ping_6000 == True, "Nodes can not ping each other with mtu size 6000", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.mtu9000
+    @pytest.mark.functional
+    def test_verify_compute_nodes_are_able_communicate_with_eachother_on_lower_mtu_sizes(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("mtu9000")
+        nodes_ips= get_node_ip(baremetal_nodes, "compute")
+        ping_64= ping_nodes_on_custom_mtu(nodes_ips, 64)
+        ping_128= ping_nodes_on_custom_mtu(nodes_ips, 128)
+        ping_512= ping_nodes_on_custom_mtu(nodes_ips, 512)
+        ping_1500= ping_nodes_on_custom_mtu(nodes_ips, 1500)
+        ping_3000= ping_nodes_on_custom_mtu(nodes_ips, 3000)
+        ping_6000= ping_nodes_on_custom_mtu(nodes_ips, 6000)
+        #validate ping responses
+        Assert(ping_64 == True, "Nodes can not ping each other with mtu size 64", endpoints, overcloud_token, environment, settings)
+        Assert(ping_128 == True, "Nodes can not ping each other with mtu size 128", endpoints, overcloud_token, environment, settings)
+        Assert(ping_512 == True, "Nodes can not ping each other with mtu size 512", endpoints, overcloud_token, environment, settings)
+        Assert(ping_1500 == True, "Nodes can not ping each other with mtu size 1500", endpoints, overcloud_token, environment, settings)
+        Assert(ping_3000 == True, "Nodes can not ping each other with mtu size 3000", endpoints, overcloud_token, environment, settings)
+        Assert(ping_6000 == True, "Nodes can not ping each other with mtu size 6000", endpoints, overcloud_token, environment, settings)
+
     '''
     Offloading
     '''
@@ -3839,19 +4725,28 @@ class TestOpenStack():
     Power Flex
     '''
     @pytest.mark.powerflex
-    @pytest.mark.storage
+    @pytest.mark.storage 
+    def test_verify_powerflex__service_status(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
+        #get powerflex service status
+        powerflex_status= get_volume_service_list(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), "hostgroup@tripleo_dellemc_powerflex")
+        print(powerflex_status)
+        #validate powerflex service
+        Assert(powerflex_status == "up", "powerflex service is not up", endpoints, overcloud_token, environment, settings)
+    
+    @pytest.mark.powerflex
+    @pytest.mark.storage 
     def test_verify_powerflex_volume_type(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("sriov")
+        skip_test_if_feature_not_enabled("powerflex")
         #get powerflex volume type
         volume_type= get_volume_type_list(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), "powerflex_backend")
-        print(volume_type)
         #validate volume type
         Assert(volume_type != None, "powerflex backend not found", endpoints, overcloud_token, environment, settings)
     
     @pytest.mark.powerflex
     @pytest.mark.storage
     def test_verify_powerflex_volume_creation(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("sriov")
+        skip_test_if_feature_not_enabled("powerflex")
         #get powerflex volume type
         volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
         #volume status
@@ -3864,9 +4759,9 @@ class TestOpenStack():
     @pytest.mark.powerflex
     @pytest.mark.storage
     def test_verify_creation_of_snapshot_from_powerflex_volume(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("sriov")
+        skip_test_if_feature_not_enabled("powerflex")
         #get powerflex volume type
-        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
         #volume status
         volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id) 
         #create snapshot of volume
@@ -3876,14 +4771,15 @@ class TestOpenStack():
         #delete volume
         delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
         #validate snapshot creation
+        Assert(volume_status == "available", "volume is not created successfully", endpoints, overcloud_token, environment, settings)
         Assert(snapshot_id is not None, "snapshot not created successfully", endpoints, overcloud_token, environment, settings)
     
     @pytest.mark.powerflex
     @pytest.mark.storage
     def test_verify_creation_of_powerflex_volume_from_snapshot(self, settings, environment, endpoints, overcloud_token):
-        skip_test_if_feature_not_enabled("sriov")
+        skip_test_if_feature_not_enabled("powerflex")
         #get powerflex volume type
-        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"))
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
         #volume status
         volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id) 
         #create snapshot of volume
@@ -3898,40 +4794,269 @@ class TestOpenStack():
         #delete volume
         delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
         #validate snapshot creation
+        Assert(volume_status == "available", "volume is not created successfully", endpoints, overcloud_token, environment, settings)
         Assert(snapshot_id is not None, "snapshot not created successfully", endpoints, overcloud_token, environment, settings)
         Assert(snapshot_volume is not None, "volume is not created successfully from snapshot", endpoints, overcloud_token, environment, settings)
-
+    
+    @pytest.mark.powerflex
+    @pytest.mark.storage
+    def test_delete_created_volume(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
+        #get powerflex volume type
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #search volume
+        volume_id= search_volume(endpoints.get("cinder"), overcloud_token, settings.get("volume1_name"), environment.get("project_id"))        
+        #validate volume deletion
+        Assert(volume_status == "available", "volume is not created successfully", endpoints, overcloud_token, environment, settings)
+        Assert(not volume_id, "volume is not deleted successfully", endpoints, overcloud_token, environment, settings)
+    
+    @pytest.mark.error
+    @pytest.mark.storage
+    def test_upscale_detached_volume(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
+        #create volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #upscale volume
+        upscale_status= upscale_voume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id, "20")
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #search volume
+        #validate volume size
+        Assert(volume_status == "available", "volume is not created successfully", endpoints, overcloud_token, environment, settings)
+        Assert(upscale_status == True, "volume is not upscaled", endpoints, overcloud_token, environment, settings)
+    
+    @pytest.mark.powerflex
+    @pytest.mark.storage
+    def test_verify_image_creation_from_volume(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
+        #get powerflex volume type
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #create image from volume
+        image_id=create_image_from_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id, settings.get("image2_name"))
+        print(image_id)
+        #delete volume
+        #delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete image
+        #delete_image(endpoints.get("image"), overcloud_token, image_id)
+        #validate volume creation
+        Assert(volume_status == "available", "volume is not created successfully", endpoints, overcloud_token, environment, settings)
+        Assert(image_id is not None, "image not created successfully from volume", endpoints, overcloud_token, environment, settings)
 
     @pytest.mark.powerflex
     @pytest.mark.storage
-    def test_verify_the_creation_of_loadbalancer_with_HTTP(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
-        skip_test_if_feature_not_enabled("offloading")
-        #get compute nodes name
-        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
-        compute1= get_compute_name(baremetal_nodes, "compute-1", ini_file.get("domain"))
+    def test_create_volume_with_replication_property(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
+        #get powerflex volume type
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #replicate volume
+        replicated_volume_id= replicate_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), "testcase_replicated_volume", volume_id)
+        if(replicated_volume_id is not None):
+            replicated_volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), replicated_volume_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), replicated_volume_id)
+        #validate volume deletion
+        Assert(volume_status == "available", "volume is not created successfully", endpoints, overcloud_token, environment, settings)
+        Assert(replicated_volume_status == "available", "volume is not created successfully", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.powerflex
+    @pytest.mark.storage
+    def test_verify_attach_volume_to_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
         #create flavor
-        flavor_id= get_flavor_id("offloading", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        flavor_id= get_flavor_id("powerflex", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
         #create instance
-        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0, "No", "vflag", environment.get("subnet1_id"))
-        if instance.get("status") =="active": 
-            #get host of instance
-            host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
-            #live migrate instance
-            response= live_migrate_server(endpoints.get("nova"), overcloud_token, instance.get("id"), compute1)
-            #get host of instance
-            new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
-            #ping test
-            if(instance.get("floating_ip") is not None):
-                ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
         #delete instance
         delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
         #delete flavor
         delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
-        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)        
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume successfully attached to server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.powerflex
+    @pytest.mark.storage
+    def test_verify_detach_volume_from_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
+        #create flavor
+        flavor_id= get_flavor_id("powerflex", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #detach volume
+        if volume_status_after_attachment =="in-use":
+            detach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_deattachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_deattachment == "available", "volume is not detached from server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.powerflex
+    @pytest.mark.storage
+    def test_verify_cold_migration_of_instance_with_attached_volume(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("powerflex")
+        #create flavor
+        flavor_id= get_flavor_id("powerflex", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"))
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #migrate instance
+        #get host of instance
+        host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #live migrate instance
+        response=  cold_migrate_instance(endpoints.get("nova"), overcloud_token, instance.get("id"), instance.get("floating_ip"), settings)
+        #get host of instance
+        new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
+        Assert(response ==202, "cold migration failed", endpoints, overcloud_token, environment, settings)
+        Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
+        Assert(ping_response==0, "instance ping failed after cold migration", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.powerflex
+    @pytest.mark.storage
+    def test_verify_live_migration_of_instance_with_attached_volume(self, settings, environment, endpoints, overcloud_token, baremetal_nodes, ini_file):
+        skip_test_if_feature_not_enabled("powerflex")
+        compute0= get_compute_name(baremetal_nodes, "compute-0", ini_file.get("domain"))
+        compute1= get_compute_name(baremetal_nodes, "compute-1", ini_file.get("domain"))
+        #create flavor
+        flavor_id= get_flavor_id("powerflex", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), compute0)
+        #cerate volume
+        volume_id= search_and_create_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), settings.get("volume1_name"), settings.get("volume_size"), "powerflex_backend")
+        #volume status
+        volume_status= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        if instance.get("status") =="active" and volume_status== "available":
+            attach_volume(endpoints.get("nova"), overcloud_token, environment.get("project_id"), instance.get("id"), volume_id)
+        volume_status_after_attachment= check_volume_status(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #migrate instance
+        #get host of instance
+        host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #live migrate instance
+        response= live_migrate_server(endpoints.get("nova"), overcloud_token, instance.get("id"), compute1)
+        #get host of instance
+        new_host= get_server_baremetal_host(endpoints.get("nova"), overcloud_token, instance.get("id"))
+        #ping test
+        if(instance.get("floating_ip") is not None):
+            ping_response = os.system("ping -c 3 " + instance.get("floating_ip"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete volume
+        delete_volume(endpoints.get("cinder"), overcloud_token, environment.get("project_id"), volume_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status != "error", "volume creation failed", endpoints, overcloud_token, environment, settings)
+        Assert(volume_status_after_attachment == "in-use", "volume failed to attach to server", endpoints, overcloud_token, environment, settings)
         Assert(response ==202, "live migration failed", endpoints, overcloud_token, environment, settings)
         Assert(host!=new_host, "instance is not migrated to other host", endpoints, overcloud_token, environment, settings)
         Assert(ping_response==0, "instance ping failed after live migration", endpoints, overcloud_token, environment, settings)
 
+    @pytest.mark.powerflex
+    @pytest.mark.storage
+    def test_verify_create_snapshot_from_instance(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
+        #create flavor
+        flavor_id= get_flavor_id("powerflex", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #create snapshot
+        instance_snapshot_id=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+
+    @pytest.mark.powerflex
+    @pytest.mark.storage
+    def test_verify_create_instance_from_snapshot(self, settings, environment, endpoints, overcloud_token):
+        skip_test_if_feature_not_enabled("powerflex")
+        #create flavor
+        flavor_id= get_flavor_id("powerflex", endpoints.get("nova"), overcloud_token, settings["flavor1_name"], settings, deployed_features)
+        #create instance
+        instance= create_instance(settings, environment, endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, flavor_id, settings["server_1_name"], settings["network1_name"], environment.get("network1_id"), None, "Yes")
+        #create snapshot
+        instance_snapshot_id=""
+        instance2=""
+        if instance.get("status") =="active":
+            instance_snapshot_id= create_server_snapshot(endpoints.get("nova"), overcloud_token, instance.get("id"), settings.get("snapshot1_name"))
+        if instance_snapshot_id != None:
+            instance2= search_and_create_server(endpoints.get("nova"), overcloud_token, settings["server_2_name"], instance_snapshot_id, settings["key_name"], flavor_id,  environment.get("network1_id"), environment.get("security_group_id"))
+            server_build_wait(endpoints.get("nova"), overcloud_token, [instance2])
+            instance2_status= check_server_status(endpoints.get("nova"), overcloud_token, instance2)
+        #delete instance
+        delete_server(endpoints.get("nova"), endpoints.get("neutron"), overcloud_token, instance)
+        delete_server_with_id(endpoints.get("nova"), overcloud_token, instance2)
+        #delete flavor
+        delete_flavor(endpoints.get("nova"), overcloud_token, flavor_id)
+        #delete snapshot
+        delete_image(endpoints.get("image"), overcloud_token, instance_snapshot_id)
+        #check status of server is active or not
+        Assert(instance.get("status") == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+        Assert(instance_snapshot_id != None, "failed to create snapshot of server", endpoints, overcloud_token, environment, settings)
+        Assert(instance2_status == "active", "instance state is not active", endpoints, overcloud_token, environment, settings)
+    
 
 def skip_test_if_feature_not_enabled(feature):
     logging.info("Starting testcase: {}".format(currentFuncName(1)))
@@ -3948,99 +5073,8 @@ def Assert(test, message, endpoints, overcloud_token, environment, settings):
         logging.error(message)
         logging.info("{} failed".format(currentFuncName(1)))
         testcases_detail[currentFuncName(1)]= [testcases_detail.get(currentFuncName(1))[0],"Failed",message]
-        #delete_environment(endpoints, overcloud_token, environment, settings)
+        delete_environment(endpoints, overcloud_token, environment, settings)
         assert test,message
     else:
         testcases_detail[currentFuncName(1)]= [testcases_detail.get(currentFuncName(1))[0],"Passed", ""]
 currentFuncName = lambda n=0: sys._getframe(n + 1).f_code.co_name
-
-def test_a():
-    pass
-
-def test_b():
-    pass
-
-def test_q():
-    pass
-
-def test_ee():
-    pass
-
-def test_re():
-    pass
-
-def test_avc():
-    pass
-
-def test_bv():
-    pass
-
-def test_qs():
-    pass
-
-def test_es():
-    pass
-
-def test_rs():
-    pass
-
-def test_aw():
-    pass
-
-def test_bw():
-    pass
-
-def test_qw():
-    pass
-
-def test_eew():
-    pass
-
-def test_rew():
-    pass
-
-def test_avwc():
-    pass
-
-def test_bwv():
-    pass
-
-def test_qws():
-    pass
-
-def test_ews():
-    pass
-
-def test_wrs():
-    pass
-
-def test_ea():
-    pass
-
-def test_eb():
-    pass
-
-def test_eq():
-    pass
-
-def test_eee():
-    pass
-
-def test_ree():
-    pass
-
-def test_avec():
-    pass
-
-def test_bev():
-    pass
-
-def test_qes():
-    pass
-
-def test_ees():
-    pass
-
-def test_res():
-    pass
-

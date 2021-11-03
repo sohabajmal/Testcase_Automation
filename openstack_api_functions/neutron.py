@@ -366,6 +366,12 @@ def get_floating_ip_id(neutron_ep, token, floating_ip):
         if ips["floating_ip_address"] == floating_ip:
             return ips["id"]
 
+def get_agent_list(neutron_ep, token):
+    """get list of agents"""
+    response= send_get_request("{}/v2.0/agents".format(neutron_ep), token)
+    response= str(response.text)
+    return response
+
 def delete_network(neutron_ep, token, network_id):
     """delete network."""
     logging.info("deleting network")

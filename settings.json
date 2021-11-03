@@ -44,11 +44,12 @@
     "pool2_name": "testcase_pool2",
     
     "instance_boot_wait_retires":3,
-    "instance_ssh_wait_retires":2,
+    "instance_ssh_wait_retires":3,
     "loadbalancer_build_retires":2,
     "loadbalancer_pool_creation_retires":2,
     "loadbalancer_listener_creation_retires":2,
+    "bare_metal_node_wait_retires":10,
  
-    "sah_ip": "100.67.62.8",
-    "ini_file": "/root/R62_16.1.ini"
+    "sah_ip": "100.67.178.9",
+    "ini_file": "/root/r178.ini"
 }

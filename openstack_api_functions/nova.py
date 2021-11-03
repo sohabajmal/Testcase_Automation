@@ -94,7 +94,7 @@ def put_extra_specs_in_flavor(nova_ep, token, flavor_id,is_numa, mem_page_size="
         payload= {
             "extra_specs": {
                 "hw:cpu_policy": "dedicated", 
-                "hw:cpu_thread_policy": "require",
+                "hw:cpu_thread_policy": "prefer",
                 "hw:numa_nodes": "1", 
                 "hw:mem_page_size": "large"
                 }
@@ -125,6 +125,7 @@ def put_ovs_dpdk_specs_in_flavor(nova_ep, token, flavor_id):
                     "hw:cpu_thread_policy": "require",
                     "hw:numa_nodes": "1", 
                     "hw:numa_mempolicy":"preferred",
+                    "hw:emulator_threads_policy":"isolate"
                 }
         }  
     response= send_post_request("{}/v2.1/flavors/{}/os-extra_specs".format(nova_ep, flavor_id), token, payload)

@@ -6,10 +6,11 @@ import os
 
 def get_ovs_dpdk_ports(baremetal_nodes, expected_ports):
     command= "sudo cat /var/lib/os-net-config/dpdk_mapping.yaml"
-    print(expected_ports)
     try:
         for node in baremetal_nodes:
             ports= ssh_into_node(node, command)
+            print("@@@")
+            print(ports)
             ports=ports[0]
             total_ports= ports.count("driver:")
             if total_ports != expected_ports:
@@ -50,7 +51,6 @@ def verify_status_of_ovs_dpdk_service(baremetal_nodes):
             #decode output
             status= stdout.read().decode('utf-8')
             error= stderr.read().decode('utf-8')
-            print(status)
             if "Active: active (running)" not in status:
                 logging.debug("OVS-DPDK Service Status is: {}".format(status))
                 return False

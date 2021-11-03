@@ -5,7 +5,7 @@ import os
 import queue
 from threading import Thread
 
-que = queue.Queue()
+threads_output = queue.Queue()
 
 def verify_dvr_agent_on_nodes(baremetal_nodes, node_type):
     command= "sudo cat /var/lib/config-data/puppet-generated/neutron/etc/neutron/l3_agent.ini | grep dvr"
@@ -30,16 +30,16 @@ def verify_traffic_on_namespace(controller_ip, router_namespace, ip, ping_ip, se
     
     logging.debug("starting threads")
     command="ping -c 80 {}".format(ping_ip)
-    p1= Thread(target=ping_instances, args=(ip, ping_ip, settings, command))
-    p2= Thread(target=listen_tcpdump, args=(controller_ip, router_namespace, "qrouter" ))
-    p2.start()
-    p1.start()
+    ping_thread= Thread(target=ping_instances, args=(ip, ping_ip, settings, command))
+    listen_tcpdump_thread= Thread(target=listen_tcpdump, args=(controller_ip, router_namespace, "qrouter" ))
+    listen_tcpdump_thread.start()
+    ping_thread.start()
     logging.info("waiting for threads to finish")
-    p2.join()
-    p1.join()
-    icmp_check= que.get()
-    tcpdump_message= que.get()
-    ping_status= que.get()
+    listen_tcpdump_thread.join()
+    ping_thread.join()
+    icmp_check= threads_output.get(block=False)
+    tcpdump_message= threads_output.get(block=False)
+    ping_status= threads_output.get(block=False)
     return icmp_check
 
 def listen_tcpdump(host_ip, namespace, namespace_type):
@@ -102,8 +102,8 @@ def listen_tcpdump(host_ip, namespace, namespace_type):
             logging.info("No ICMP packet received")
             return_result= temp_result
             icmp_received=False
-        que.put(icmp_received)
-        que.put(return_result )
+        threads_output.put(icmp_received)
+        threads_output.put(return_result )
         return icmp_received, return_result
     except Exception as e:
         logging.exception(e)
@@ -124,7 +124,7 @@ def ping_instances(instance1, instance2, settings, command):
         logging.info("command {} successfully executed on compute node {}".format(command, instance2))
         output= stdout.read().decode('ascii')
         error= stderr.read().decode('ascii')
-        que.put(error)
+        threads_output.put(error)
         return output, error
     except Exception as e:
         logging.exception(e)
@@ -156,3 +156,17 @@ def verify_l3_ha_on_nodes(baremetal_nodes):
         logging.exception(e)
         return False
 
+def verify_l2_population_driver_on_nodes(baremetal_nodes):
+    command= "sudo cat /var/lib/config-data/puppet-generated/neutron/etc/neutron/plugins/ml2/openvswitch_agent.ini | grep l2_population"
+    try:
+        for node in baremetal_nodes:
+            ssh_output= ssh_into_node(node, command)
+            l2_driver= ssh_output[0].split("=")
+            logging.debug("l2 population driver is {}, is {}".format(node, ssh_output[0].strip()))
+            if l2_driver[1].strip() != "True":
+                return False
+        else: 
+            return True
+    except Exception as e:
+        logging.exception(e)
+        return False

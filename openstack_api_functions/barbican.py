@@ -73,7 +73,7 @@ def add_symmetric_key_to_store(barbican_ep, token):
             }
     response= send_post_request("{}/v1/orders/".format(barbican_ep), token, payload)
     #parse response
-    if (response.status_code==201):
+    if (response.status_code==202):
         key_id= str(response.text)
         key_id= key_id.split("/")
         key_id= key_id[-1]

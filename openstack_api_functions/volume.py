@@ -69,6 +69,7 @@ def get_volume_metadata(storage_ep, token, volume_id, project_id):
     logging.debug(response.text)
     logging.info("successfully received volume list") if response.ok else response.raise_for_status()
     data= response.json()
+    print(data)
     return data["volume"]["volume_image_metadata"]
 
 def create_volume(storage_ep, token, project_id, volume_name, volume_size, backend=None, image_id=None):
@@ -88,7 +89,7 @@ def create_volume(storage_ep, token, project_id, volume_name, volume_size, backe
     beckend_payload={
         "volume_type": backend
     }
-    if image_id is not None:
+    if backend is not None:
         payload= {"volume":{**payload["volume"], **beckend_payload}}
     response= requests.post("{}/v3/{}/volumes".format(storage_ep, project_id), headers= {'content-type': "application/json", 'X-Auth-Token': token}, data=json.dumps(payload))
     logging.info("successfully created volume {}".format(volume_name)) if response.ok else response.raise_for_status()
@@ -107,6 +108,7 @@ def upscale_voume(storage_ep, token, project_id, volume_id, volume_size):
         return True
     else:
         return False
+
 def migrate_voume(storage_ep, token, project_id, volume_id):
     payload={
     "os-migrate_volume": {
@@ -124,10 +126,10 @@ def migrate_voume(storage_ep, token, project_id, volume_id):
     else:
         return False
 
-def search_and_create_volume(storage_ep, token, project_id, volume_name, volume_size, image_id=None):
+def search_and_create_volume(storage_ep, token, project_id, volume_name, volume_size, backend=None, image_id=None):
     volume_id= search_volume(storage_ep, token, volume_name, project_id)
     if volume_id is None:
-        volume_id= create_volume(storage_ep, token, project_id, volume_name, volume_size, image_id )
+        volume_id= create_volume(storage_ep, token, project_id, volume_name, volume_size, backend, image_id )
     logging.debug("Volume id: "+volume_id)    
     return volume_id
 def check_volume_status(storage_ep, token, project_id, volume_id):
@@ -165,6 +167,7 @@ def replicate_volume(storage_ep, token, project_id, volume_name, source_id):
     if(response.status_code== 202):
         logging.info("successfully replicated volume {}".format(volume_name)) if response.ok else response.raise_for_status()
         data= response.json()
+        time.sleep(30)
         return data["volume"]["id"]
     else: 
         return None
@@ -193,8 +196,27 @@ def get_volume_type_list(storage_ep, token, project_id, volume_type):
     data= response.json()
     return parse_json_to_search_resource(response, "volume_types", "name",volume_type, "id")
 
+def get_volume_service_list(storage_ep, token, project_id, service_name):
+    response= send_get_request("{}/v3/{}/os-services".format(storage_ep, project_id), token)
+    logging.debug(response.text)
+    logging.info("successfully received volume list") if response.ok else response.raise_for_status()
+    data= response.json()
+    return parse_json_to_search_resource(response, "services", "host", service_name, "state")
 
-
+def create_image_from_volume(storage_ep, token, project_id, volume_id, image_name):
+    payload= {"os-volume_upload_image": {
+                "force": "false", 
+                "image_name": image_name, 
+                "container_format": "bare", 
+                "disk_format": "qcow2"
+                }
+            }
+    response= requests.post("{}/v3/{}/volumes/{}/action".format(storage_ep, project_id, volume_id), headers= {'content-type': "application/json", 'X-Auth-Token': token}, data=json.dumps(payload))
+    logging.debug(response.text)
+    data= response.json()
+    print(response.text)
+    return data["os-volume_upload_image"]["image_id"]
+    
 def delete_volume(cinder_ep, token, project_id, volume_id):
     logging.info("deleting volume")
     response= send_delete_request("{}/v3/{}/volumes/{}".format(cinder_ep,project_id,volume_id), token)
